@@ -2,8 +2,6 @@
   "mqttAddress": "tcp://127.0.0.1:1883",
   "mqttUser": "",
   "mqttPassword": "",
-  "wakeTopic": "respeaker/wake",
-  "sleepTopic": "respeaker/off",
   "wsAddress": "ws://127.0.0.1:2700",
   "kwsModelName": "snowboy.umdl",
   "kwsSensitivity": 0.6,

@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.4.1)
-project(respeakerws VERSION 1.0.0)
+project(RespeakerCore VERSION 1.0.0)
 
 set(MIN_LIBRESPEAKER_VERSION 2.1.1)
 set(CMAKE_CXX_STANDARD 14)
@@ -16,7 +16,7 @@ include_directories(
     ${RESPEAKER_INCLUDE_DIRS}
 )
 
-add_executable(respeakerws src/respeakerws.cpp)
+add_executable(RespeakerCore src/RespeakerCore.cpp)
 file(COPY ${CMAKE_CURRENT_SOURCE_DIR}/src/config.json
     DESTINATION ${CMAKE_CURRENT_BINARY_DIR})
 
@@ -27,7 +27,7 @@ link_directories(
 find_library(IXWEBSOCKET ixwebsocket lib)
 find_library(PAHO_MQTT_3A paho-mqtt3a lib)
 
-target_link_libraries(respeakerws
+target_link_libraries(RespeakerCore
     ${LIBGFLAGS_PATH} -lpthread -lz
     ${RESPEAKER_LIBRARIES}
     ${IXWEBSOCKET}
