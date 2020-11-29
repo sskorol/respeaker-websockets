@@ -63,3 +63,8 @@ Current app's logic assumes the following chain:
 - Send audio chunks to WS server until we receive a final transcribe or reach a 8s timeout. Transcibe or timeout event also triggers MQTT message for putting LEDs into idle state.
 
 It's recommended you'll check **RespeakerCore.cpp** source code and comments to understand what's going on there and customize it for your own needs.
+
+### ToDo
+
+- [ ] Refactor code in an object-oriented manner.
+- [ ] Implement LED driver module to remove MQTT transport and perform a direct Pixel Ring manipulation from C++ code.
