@@ -117,7 +117,7 @@ int main(int argc, char *argv[])
   respeaker->RegisterDirectionManagerNode(hotwordNode.get());
   respeaker->RegisterHotwordDetectionNode(hotwordNode.get());
 
-  // If we couln't start respeaker chain, we have to cleanup transports.
+  // If we couldn't start respeaker chain, we have to cleanup transports.
   if (!respeaker->Start(&shouldStopListening))
   {
     cerr << "\nUnable to start the respeaker node chain. Quitting..." << endl;

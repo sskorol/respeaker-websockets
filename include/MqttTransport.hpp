@@ -5,8 +5,8 @@
 #define MQTT_QOS 1
 #define MQTT_KEEP_ALIVE_INTERVAL 20
 #define MQTT_CONNECTION_TIMEOUT 5000
-#define MQTT_WAKE_TOPIC "respeaker/wake"
-#define MQTT_SLEEP_TOPIC "respeaker/off"
+#define MQTT_WAKE_TOPIC "respeaker/led/wake"
+#define MQTT_SLEEP_TOPIC "respeaker/led/sleep"
 #define MICRO_TIMEOUT 1
 
 // Required for sending events to control LEDs via https://github.com/respeaker/pixel_ring. See docs: https://github.com/eclipse/paho.mqtt.c

@@ -1,18 +1,18 @@
-### Respeaker WebSocket Client
+## Respeaker WebSocket Client
 
 This project is a quick start guide for revealing Alango DSP algorithms bundled into Respeaker library. Basically, it allows sending pre-processed audio stream to custom ASR engine via WebSockets.
 
-#### Requirements
+### Requirements
 
 Make sure you've already installed **librespeaker** on your Respeaker Core V2 board. You can find required dependencies in the official [respeakerd installation script](https://github.com/respeaker/respeakerd/blob/master/scripts/install_all.sh#L37-L43). Or just run the entire script until you reach the Alexa auth step. Note that the above script was created for AVS integration only. So we don't need to run all the instructions listed in the provided script.
 
 This project also depends on [IXWebSocket library](https://machinezone.github.io/IXWebSocket/) which was manually built and added as a static lib. However, if for some reason further compilation will fail for you (or you need an advanced socket configuration), try to rebuild IXWebSocket manually following the official guide.
 
-Pixel Ring control is performed via [Paho Mqtt library](https://github.com/eclipse/paho.mqtt.c) which was also manually built and added as a static lib. Note that topics are hardcoded for now. See Mqtt transport implementation for more details. A link to the actual Pixel Ring python wrapper will be added soon.
+Pixel Ring control is performed via [Paho Mqtt library](https://github.com/eclipse/paho.mqtt.c) which was also manually built and added as a static lib. Note that topics are hardcoded for now. See Mqtt transport implementation for more details. Pixel Ring python wrapper is hosted in a dedicated repo. See [README](https://github.com/sskorol/respeaker-led) instruction.
 
 Setup [VOSK ASR server](https://github.com/alphacep/vosk-server/blob/master/websocket/asr_server.py), which supports different languages. Check the official guide on their webpage. We'll use this server later for sending audio chunks from Respeaker board.
 
-#### Configuration
+### Configuration
 
 Adjust **./src/config.json** with required values. Note that it'll be automatically copied to the build folder.
 ```json
@@ -29,7 +29,7 @@ Adjust **./src/config.json** with required values. Note that it'll be automatica
 }
 ```
 
-#### Installation
+### Installation
 
 ```shell script
 git clone https://github.com/sskorol/respeaker-websockets.git
@@ -40,7 +40,7 @@ make -j
 
 This script will produce **RespeakerCore** executable in the build folder.
 
-#### Running
+### Running
 
 Make sure you have VOSK or other ASR server running. By default **RespeakerCore** uses localhost address trying to establish connection with WS server. You may want to change it to the actual server's address and rebuild.
 
