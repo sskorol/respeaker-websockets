@@ -6,9 +6,7 @@ This project is a quick start guide for revealing Alango DSP algorithms bundled 
 
 Make sure you've already installed **librespeaker** on your Respeaker Core V2 board. You can find required dependencies in the official [respeakerd installation script](https://github.com/respeaker/respeakerd/blob/master/scripts/install_all.sh#L37-L43). Or just run the entire script until you reach the Alexa auth step. Note that the above script was created for AVS integration only. So we don't need to run all the instructions listed in the provided script.
 
-This project also depends on [IXWebSocket library](https://machinezone.github.io/IXWebSocket/) which was manually built and added as a static lib. However, if for some reason further compilation will fail for you (or you need an advanced socket configuration), try to rebuild IXWebSocket manually following the official guide.
-
-LED animation is implemented based on [snips-respeaker-skill](https://github.com/snipsco/snips-skill-respeaker) sources.
+This project also depends on [IXWebSocket library](https://machinezone.github.io/IXWebSocket/) which was manually built and added as a static lib. However, if for some reason you need an advanced socket configuration, try to rebuild IXWebSocket manually following the official guide.
 
 Setup [VOSK ASR server](https://github.com/alphacep/vosk-server/blob/master/websocket/asr_server.py), which supports different languages. Check the official guide on their webpage. We'll use this server later for sending audio chunks from Respeaker board.
 
@@ -23,10 +21,13 @@ Adjust **config.json** with required values. Note that it'll be automatically co
     "kwsSensitivity": 0.6,
     "listeningTimeout": 8000,
     "wakeWordDetectionOffset": 300,
-    "gainLevel": 7
+    "gainLevel": 10,
+    "singleBeamOutput": false,
+    "enableWavLog": false,
+    "agc": true
   },
   "pixelRing": {
-    "ledBrightness": 31,
+    "ledBrightness": 20,
     "onIdle": true,
     "onListen": true,
     "onSpeak": true,
@@ -37,7 +38,7 @@ Adjust **config.json** with required values. Note that it'll be automatically co
     "speakColor": "purple",
     "muteColor": "yellow",
     "unmuteColor": "green",
-    "mute": false
+    "isMutedOnStart": false
   },
   "hardware": {
     "model": "Respeaker Core V2",
@@ -52,6 +53,8 @@ Adjust **config.json** with required values. Note that it'll be automatically co
 }
 ```
 
+Note that you can use any of the hotwords located in **models** folder.
+
 ### Installation
 
 ```shell script
@@ -65,7 +68,7 @@ This script will produce **respeaker-core** executable in the build folder.
 
 ### Running
 
-Make sure you have VOSK or other ASR server running. By default **RespeakerCore** uses localhost address trying to establish connection with WS server. You may want to change it to the actual server's address and rebuild.
+Make sure you have VOSK or other ASR server running. By default **respeaker-core** uses localhost address trying to establish connection with WS server. You may want to change it to the actual server's address.
 
 User the following commands to start a speech streaming process:
 ```shell script
@@ -73,17 +76,17 @@ cd build
 ./respeaker-core
 ```
 
-You should see a configuration log and a message about successfull connectivity to WS server and Pixel Ring setup.
+You should see a configuration log and a message about successfull connectivity to WS server and Pixel Ring (implemented based on [snips-respeaker-skill](https://github.com/snipsco/snips-skill-respeaker) sources).
 
 Current app's logic assumes the following chain:
 
 - Apply rate conversion, beamforming, acoustic echo cancellation and noise suppression to the input audio stream.
-- Wake word detection ("snowboy" is a default one). You can change it in **config.json**. Note that the default location is hardcoded, assuming you've executed respeaker setup script.
+- Wake word detection ("snowboy" is a default one). You can change it in **config.json**.
 - When wake word is detected, you will see it in log, as well as an angle which was tracked by DOA (direction of arrival) algorithm. Moreover, a Pixel Ring color state is changed to notify user so that they can start dictating.
 - We give a 300ms delay to prevent sending audio chunks to the WS server. It's required for the hotword's filtering which we don't wanna get a transcribe for.
 - Send audio chunks to WS server until we receive a final transcribe or reach a 8s timeout. Transcibe or timeout event also changes Pixel Ring state, which becomes idle.
 
-It's recommended you'll check **respeaker-core.cpp** source code and comments to understand what's going on there, and customize it for your own needs.
+It's recommended you'll check [respeaker-core.cpp](https://github.com/sskorol/respeaker-websockets/blob/master/src/respeaker_core.cpp) source code and comments to understand what's going on there, and customize it for your own needs.
 
 ### ToDo
 

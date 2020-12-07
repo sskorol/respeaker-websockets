@@ -5,10 +5,13 @@
     "kwsSensitivity": 0.6,
     "listeningTimeout": 8000,
     "wakeWordDetectionOffset": 300,
-    "gainLevel": 7
+    "gainLevel": 10,
+    "singleBeamOutput": false,
+    "enableWavLog": false,
+    "agc": true
   },
   "pixelRing": {
-    "ledBrightness": 31,
+    "ledBrightness": 20,
     "onIdle": true,
     "onListen": true,
     "onSpeak": true,
@@ -19,7 +22,7 @@
     "speakColor": "purple",
     "muteColor": "yellow",
     "unmuteColor": "green",
-    "mute": false
+    "isMutedOnStart": false
   },
   "hardware": {
     "model": "Respeaker Core V2",

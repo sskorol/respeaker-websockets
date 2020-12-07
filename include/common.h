@@ -39,6 +39,9 @@ typedef enum
 #define RSP_LISTENING_TIMEOUT_STR "listeningTimeout"
 #define RSP_WAKEWORD_DETECTION_OFFSET_STR "wakeWordDetectionOffset"
 #define RSP_GAIN_LEVEL_STR "gainLevel"
+#define RSP_SINGLE_BEAM_OUTPUT_STR "singleBeamOutput"
+#define RSP_WAV_LOG_STR "enableWavLog"
+#define RSP_AGC_STR "agc"
 
 #define HW_POWER_STR "power"
 #define HW_LED_NUM "ledsAmount"
@@ -59,7 +62,7 @@ typedef enum
 #define PR_SPEAK_COLOR_STR "speakColor"
 #define PR_MUTE_COLOR_STR "muteColor"
 #define PR_UNMUTE_COLOR_STR "unmuteColor"
-#define PR_MUTE_STR "mute"
+#define PR_MUTE_STR "isMutedOnStart"
 
 #define RED_C 0xFF0000
 #define GREEN_C 0x00FF00

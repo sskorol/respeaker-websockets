@@ -24,7 +24,7 @@ extern "C"
 #include <respeaker.h>
 #include <chain_nodes/pulse_collector_node.h>
 #include <chain_nodes/vep_aec_beamforming_node.h>
-#include <chain_nodes/snowboy_1b_doa_kws_node.h>
+#include <chain_nodes/snowboy_mb_doa_kws_node.h>
 
 // See JSON lib docs: https://github.com/nlohmann/json (included as a prebuilt single header)
 #include "json.hpp"
@@ -45,7 +45,7 @@ using TimePoint = chrono::time_point<SteadyClock>;
 WsTransport *wsClient;
 
 // Respeaker settings
-string kwsPath("/usr/share/respeaker/snowboy/resources/");
+string kwsPath(string(getenv("PWD")) + "/models/");
 string kwsResourcesPath = kwsPath + "common.res";
 string inputSource("default");
 

@@ -60,8 +60,6 @@ void handleQuit(int signal)
 {
   verbose(VV_INFO, stdout, "Caught signal %d. Terminating...", signal);
   shouldStopListening = true;
-  RUNTIME.if_terminate = 1;
-  this_thread::sleep_for(chrono::seconds(1));
 }
 
 void configureSignalHandler()
@@ -77,6 +75,7 @@ void configureSignalHandler()
 int main(int argc, char *argv[])
 {
   setVerbose(VV_INFO);
+  configureSignalHandler();
 
   // ToDo: verify if all the required variables are set.
   json config = readConfig();
@@ -86,29 +85,30 @@ int main(int argc, char *argv[])
     exit(EXIT_FAILURE);
   }
 
-  configureSignalHandler();
-  setup(config);
-
   // Respeaker config: http://respeaker.io/librespeaker_doc/index.html
   string modelName = config[C_RESPEAKER_STR][RSP_KWS_MODEL_STR];
   string kwsModelPath = kwsPath + modelName;
   string kwsSensitivityLevel = to_string(config[C_RESPEAKER_STR][RSP_KWS_SENSITIVITY_STR]);
   int listeningTimeout = config[C_RESPEAKER_STR][RSP_LISTENING_TIMEOUT_STR];
   int wakeWordDetectionOffset = config[C_RESPEAKER_STR][RSP_WAKEWORD_DETECTION_OFFSET_STR];
+  bool doAgc = config[C_RESPEAKER_STR][RSP_AGC_STR];
   int gainLevel = config[C_RESPEAKER_STR][RSP_GAIN_LEVEL_STR];
+  bool isSingleBeamOutput = config[C_RESPEAKER_STR][RSP_SINGLE_BEAM_OUTPUT_STR];
+  bool doWaveLog = config[C_RESPEAKER_STR][RSP_WAV_LOG_STR];
 
   unique_ptr<PulseCollectorNode> collectorNode;
   unique_ptr<VepAecBeamformingNode> beamformingNode;
-  // ToDo: investigate why multi-beam kws node doesn't work
-  unique_ptr<Snowboy1bDoaKwsNode> hotwordNode;
+  unique_ptr<SnowboyMbDoaKwsNode> hotwordNode;
   unique_ptr<ReSpeaker> respeaker;
 
   collectorNode.reset(PulseCollectorNode::Create_48Kto16K(inputSource, BLOCK_SIZE_MS));
-  beamformingNode.reset(VepAecBeamformingNode::Create(CIRCULAR_6MIC_7BEAM, true, 6, false));
-  hotwordNode.reset(Snowboy1bDoaKwsNode::Create(kwsResourcesPath, kwsModelPath, kwsSensitivityLevel, 10, true));
+  beamformingNode.reset(VepAecBeamformingNode::Create(CIRCULAR_6MIC_7BEAM, isSingleBeamOutput, 6, doWaveLog));
+  hotwordNode.reset(SnowboyMbDoaKwsNode::Create(kwsResourcesPath, kwsModelPath, kwsSensitivityLevel, 10, doAgc));
 
+  if (doAgc) {
+    hotwordNode->SetAgcTargetLevelDbfs(gainLevel);
+  }
   hotwordNode->DisableAutoStateTransfer();
-  hotwordNode->SetAgcTargetLevelDbfs(gainLevel);
 
   // Create audio DSP chain: convert Pulse audio to 16k -> do beamforming, AEC, NR -> detect hotword.
   beamformingNode->Uplink(collectorNode.get());
@@ -128,6 +128,8 @@ int main(int argc, char *argv[])
   }
   else
   {
+    // Setup Pixel Ring and WS.
+    setup(config);
     size_t channels = respeaker->GetNumOutputChannels();
     int rate = respeaker->GetNumOutputRate();
     verbose(VV_INFO, stdout, "Channels ............ %d", channels);
@@ -139,7 +141,7 @@ int main(int argc, char *argv[])
   TimePoint detectTime;
   string audioChunk;
 
-  while (!shouldStopListening && wsClient->isConnected())
+  while (!shouldStopListening && wsClient->isConnected() && trackPixelRingState())
   {
     audioChunk = respeaker->DetectHotword(wakeWordIndex);
 
@@ -166,11 +168,6 @@ int main(int argc, char *argv[])
       isWakeWordDetected = false;
       wsClient->isTranscribed(false);
       changePixelRingState(TO_MUTE);
-    }
-
-    if (!trackPixelRingState())
-    {
-      break;
     }
   }
 

@@ -21,6 +21,7 @@ add_executable(respeaker_core src/respeaker_core.cpp ${PIXEL_RING_SOURCES} ${PRO
 
 file(COPY ${CMAKE_CURRENT_SOURCE_DIR}/config.json
     DESTINATION ${CMAKE_CURRENT_BINARY_DIR})
+file(COPY ${CMAKE_CURRENT_SOURCE_DIR}/models DESTINATION ${CMAKE_CURRENT_BINARY_DIR})
 
 link_directories(
     ${RESPEAKER_LIBRARY_DIRS}
@@ -30,7 +31,7 @@ find_library(IXWEBSOCKET ixwebsocket lib)
 
 target_link_libraries(
     respeaker_core
-    ${LIBGFLAGS_PATH} -lpthread -lz
+    ${LIBGFLAGS_PATH} -lpthread -lz -lstdc++fs
     ${RESPEAKER_LIBRARIES}
     ${IXWEBSOCKET}
 )
