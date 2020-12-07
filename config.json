@@ -1,0 +1,34 @@
+{
+  "webSocketAddress": "ws://127.0.0.1:2700",
+  "respeaker": {
+    "kwsModelName": "snowboy.umdl",
+    "kwsSensitivity": 0.6,
+    "listeningTimeout": 8000,
+    "wakeWordDetectionOffset": 300,
+    "gainLevel": 7
+  },
+  "pixelRing": {
+    "ledBrightness": 31,
+    "onIdle": true,
+    "onListen": true,
+    "onSpeak": true,
+    "toMute": true,
+    "toUnmute": true,
+    "idleColor": "teal",
+    "listenColor": "blue",
+    "speakColor": "purple",
+    "muteColor": "yellow",
+    "unmuteColor": "green",
+    "mute": false
+  },
+  "hardware": {
+    "model": "Respeaker Core V2",
+    "ledsAmount": 12,
+    "spiBus": 0,
+    "spiDev": 0,
+    "power": {
+      "gpioPin": 66,
+      "gpioVal": 0
+    }
+  }
+}
