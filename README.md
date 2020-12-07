@@ -65,7 +65,7 @@ This script will produce **respeaker-core** executable in the build folder.
 
 ### Running
 
-Make sure you have VOSK or other ASR server running. By default **RespeakerCore** uses localhost address trying to establish connection with WS server. You may want to change it to the actual server's address and rebuild.
+Make sure you have VOSK or other ASR server running. By default **respeaker-core** uses localhost address trying to establish connection with WS server. You may want to change it to the actual server's address and rebuild.
 
 User the following commands to start a speech streaming process:
 ```shell script
@@ -83,7 +83,7 @@ Current app's logic assumes the following chain:
 - We give a 300ms delay to prevent sending audio chunks to the WS server. It's required for the hotword's filtering which we don't wanna get a transcribe for.
 - Send audio chunks to WS server until we receive a final transcribe or reach a 8s timeout. Transcibe or timeout event also changes Pixel Ring state, which becomes idle.
 
-It's recommended you'll check **respeaker-core.cpp** source code and comments to understand what's going on there, and customize it for your own needs.
+It's recommended you'll check [respeaker-core.cpp](https://github.com/sskorol/respeaker-websockets/blob/master/src/respeaker_core.cpp) source code and comments to understand what's going on there, and customize it for your own needs.
 
 ### ToDo
 
