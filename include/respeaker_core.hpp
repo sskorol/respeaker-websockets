@@ -83,7 +83,7 @@ void configureSignalHandler();
 
 void cleanup(int status);
 
-void setup(json config);
+void enablePixelRing(json config);
 
 bool trackPixelRingState();
 

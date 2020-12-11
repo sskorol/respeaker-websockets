@@ -1,9 +1,6 @@
 #include "respeaker_core.hpp"
 
-/**
- * Setup main resources.
- */
-void setup(json config)
+void enablePixelRing(json config)
 {
   setupPixelRing(config);
 
@@ -60,6 +57,8 @@ void handleQuit(int signal)
 {
   verbose(VV_INFO, stdout, "Caught signal %d. Terminating...", signal);
   shouldStopListening = true;
+  RUNTIME.if_terminate = 1;
+  pthread_cancel(RUNTIME.curr_thread);
 }
 
 void configureSignalHandler()
@@ -74,9 +73,9 @@ void configureSignalHandler()
 
 int main(int argc, char *argv[])
 {
-  setVerbose(VV_INFO);
   configureSignalHandler();
-
+  setVerbose(VV_INFO);
+  
   // ToDo: verify if all the required variables are set.
   json config = readConfig();
   if (config.is_discarded())
@@ -128,8 +127,7 @@ int main(int argc, char *argv[])
   }
   else
   {
-    // Setup Pixel Ring and WS.
-    setup(config);
+    enablePixelRing(config);
     size_t channels = respeaker->GetNumOutputChannels();
     int rate = respeaker->GetNumOutputRate();
     verbose(VV_INFO, stdout, "Channels ............ %d", channels);
