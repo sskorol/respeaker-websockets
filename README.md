@@ -1,12 +1,12 @@
 ## Respeaker WebSocket Client
 
-This project is a quick start guide for revealing Alango DSP algorithms bundled into Respeaker library. Basically, it allows sending pre-processed audio stream to custom ASR engine via WebSockets.
+This project is a quick start guide for revealing [Alango](http://www.alango.com/) DSP algorithms bundled into Respeaker library. Basically, it allows sending pre-processed audio stream to custom ASR engine via WebSockets.
 
 ### Requirements
 
 Make sure you've already installed **librespeaker** on your Respeaker Core V2 board. You can find required dependencies in the official [respeakerd installation script](https://github.com/respeaker/respeakerd/blob/master/scripts/install_all.sh#L37-L43). Or just run the entire script until you reach the Alexa auth step. Note that the above script was created for AVS integration only. So we don't need to run all the instructions listed in the provided script.
 
-This project also depends on [IXWebSocket library](https://machinezone.github.io/IXWebSocket/) which was manually built and added as a static lib. However, if for some reason you need an advanced socket configuration, try to rebuild IXWebSocket manually following the official guide.
+This project also depends on [IXWebSocket library](https://machinezone.github.io/IXWebSocket/) which was manually built and added as a static lib. However, if for some reason you need an advanced socket configuration, try to rebuild **IXWebSocket** manually following the official guide.
 
 Setup [VOSK ASR server](https://github.com/alphacep/vosk-server/blob/master/websocket/asr_server.py), which supports different languages. Check the official guide on their webpage. We'll use this server later for sending audio chunks from Respeaker board.
 
@@ -87,6 +87,59 @@ Current app's logic assumes the following chain:
 - Send audio chunks to WS server until we receive a final transcribe or reach a 8s timeout. Transcibe or timeout event also changes Pixel Ring state, which becomes idle.
 
 It's recommended you'll check [respeaker-core.cpp](https://github.com/sskorol/respeaker-websockets/blob/master/src/respeaker_core.cpp) source code and comments to understand what's going on there, and customize it for your own needs.
+
+### Running as a Service
+
+Install nodejs:
+```shell script
+curl -sL https://deb.nodesource.com/setup_14.x | bash -
+apt-get install -y nodejs
+```
+
+Install [pm2](https://pm2.keymetrics.io/docs/usage/quick-start/):
+```shell script
+npm install pm2@latest -g
+```
+
+Create pm2 startup script:
+```schell script
+pm2 startup -u respeaker --hp /home/respeaker
+```
+
+This command will produce further instructions you need to follow to complete pm2 startup script setup.
+
+Open pm2 service for editing:
+```shell script
+sudo nano /etc/systemd/system/pm2-respeaker.service
+```
+
+Adjust **Unit** block with the following options:
+```shell script
+Wants=network-online.target
+After=network.target network-online.target
+```
+
+Adjust **Service** block with the following option:
+```shell script
+LimitRTPRIO=99
+```
+
+It's very important to set this limit (also known as **ulimit -r**). Otherwise, you want be able to start this service on boot.
+
+Adjust **Install** block with the following option:
+```shell script
+WantedBy=multi-user.target network-online.target
+```
+
+Add **respeaker-core** binary to pm2:
+```shell script
+pm2 start /home/respeaker/path/to/respeaker-core --watch --name asr --time
+```
+
+Save current process list:
+```shell script
+pm2 save
+```
 
 ### ToDo
 
