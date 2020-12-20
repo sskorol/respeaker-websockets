@@ -124,7 +124,7 @@ Adjust **Service** block with the following option:
 LimitRTPRIO=99
 ```
 
-It's very important to set this limit (also known as **ulimit -r**). Otherwise, you want be able to start this service on boot.
+It's very important to set this limit (also known as **ulimit -r**). Otherwise, you won't be able to start this service on boot.
 
 Adjust **Install** block with the following option:
 ```shell script
