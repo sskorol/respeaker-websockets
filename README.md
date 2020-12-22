@@ -8,7 +8,7 @@ Make sure you've already installed **librespeaker** on your Respeaker Core V2 bo
 
 This project also depends on [IXWebSocket library](https://machinezone.github.io/IXWebSocket/) which was manually built and added as a static lib. However, if for some reason you need an advanced socket configuration, try to rebuild **IXWebSocket** manually following the official guide.
 
-Setup [VOSK ASR server](https://github.com/alphacep/vosk-server/blob/master/websocket/asr_server.py), which supports different languages. Check the official guide on their webpage. We'll use this server later for sending audio chunks from Respeaker board.
+Setup [Vosk ASR server](https://github.com/sskorol/asr-server). We'll use this server later for sending audio chunks from Respeaker board.
 
 ### Configuration
 
@@ -140,6 +140,10 @@ Save current process list:
 ```shell script
 pm2 save
 ```
+
+### Demo
+
+[![IMAGE ALT TEXT HERE](https://img.youtube.com/vi/IAASoRu2ANU/0.jpg)](https://www.youtube.com/watch?v=IAASoRu2ANU)
 
 ### ToDo
 
