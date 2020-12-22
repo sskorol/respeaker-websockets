@@ -1,5 +1,5 @@
 {
-  "webSocketAddress": "ws://127.0.0.1:2700",
+  "webSocketAddress": "ws://192.168.0.187:2700",
   "respeaker": {
     "kwsModelName": "snowboy.umdl",
     "kwsSensitivity": 0.6,

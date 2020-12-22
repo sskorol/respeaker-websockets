@@ -139,7 +139,7 @@ int main(int argc, char *argv[])
   TimePoint detectTime;
   string audioChunk;
 
-  while (!shouldStopListening && wsClient->isConnected() && trackPixelRingState())
+  while (!shouldStopListening && trackPixelRingState())
   {
     audioChunk = respeaker->DetectHotword(wakeWordIndex);
 
