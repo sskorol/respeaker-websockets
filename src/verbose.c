@@ -17,17 +17,17 @@ int verbose(VERBOSE lvl, FILE *stream, const char *__restrict format, ...)
         return 0;
 
     char *time_temp = get_time_stamp();
-    char lable[50];
+    char label[50];
 
     if (lvl == V_NORMAL)
-        strcpy(lable, RED " [Error] " NONE);
+        strcpy(label, RED " [Error] " NONE);
     if (lvl == VV_INFO)
-        strcpy(lable, BLUE " [Info] " NONE);
+        strcpy(label, BLUE " [Info] " NONE);
     if (lvl == VVV_DEBUG)
-        strcpy(lable, YELLOW " [Debug] " NONE);
+        strcpy(label, YELLOW " [Debug] " NONE);
 
     fputs(time_temp, stream);
-    fputs(lable, stream);
+    fputs(label, stream);
 
     va_list args;
     va_start(args, format);

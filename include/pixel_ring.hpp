@@ -1,7 +1,7 @@
 #ifndef __PIXEL_RING__HPP__
 #define __PIXEL_RING_HPP__
 
-#include "json.hpp"
+#include "config.hpp"
 extern "C"
 {
 #include "common.h"
@@ -13,7 +13,6 @@ extern "C"
 extern RUNTIME_OPTIONS RUNTIME;
 
 using namespace std;
-using json = nlohmann::json;
 
 /**
  * Basic color conversion API. 
@@ -52,13 +51,6 @@ uint32_t textToColour(const char *cTxt)
     }
   }
   return 0;
-}
-
-void dumpInfo()
-{
-  verbose(VV_INFO, stdout, "Brightness .......... %d", RUNTIME.max_brightness);
-  verbose(VV_INFO, stdout, "Device .............. %s", RUNTIME.hardware_model);
-  verbose(VV_INFO, stdout, "Press CTRL-C to exit");
 }
 
 /**
@@ -112,49 +104,28 @@ int resetPowerPin()
 }
 
 /**
- * Parse json config and populate pixel ring runtime options.
+ * Populate pixel ring runtime options.
  */
-void setupPixelRing(json config)
+void setupPixelRing(Config* config)
 {
-  string model = config[C_HARDWARE_STR][HW_MODEL_STR];
-  strcpy(RUNTIME.hardware_model, model.c_str());
-
-  int brightness = config[C_PIXEL_RING_STR][PR_LED_BRI_STR];
-  RUNTIME.max_brightness = brightness;
-
-  string idleColor = config[C_PIXEL_RING_STR][PR_IDLE_COLOR_STR];
-  RUNTIME.animation_color.idle = textToColour(idleColor.c_str());
-
-  string listenColor = config[C_PIXEL_RING_STR][PR_LISTEN_COLOR_STR];
-  RUNTIME.animation_color.listen = textToColour(listenColor.c_str());
-
-  string speakColor = config[C_PIXEL_RING_STR][PR_SPEAK_COLOR_STR];
-  RUNTIME.animation_color.speak = textToColour(speakColor.c_str());
-
-  string muteColor = config[C_PIXEL_RING_STR][PR_MUTE_COLOR_STR];
-  RUNTIME.animation_color.mute = textToColour(muteColor.c_str());
-
-  string unmuteColor = config[C_PIXEL_RING_STR][PR_UNMUTE_COLOR_STR];
-  RUNTIME.animation_color.unmute = textToColour(unmuteColor.c_str());
-
-  RUNTIME.animation_enable[ON_IDLE] = config[C_PIXEL_RING_STR][PR_ON_IDLE_STR];
-  RUNTIME.animation_enable[ON_LISTEN] = config[C_PIXEL_RING_STR][PR_ON_LISTEN_STR];
-  RUNTIME.animation_enable[ON_SPEAK] = config[C_PIXEL_RING_STR][PR_ON_SPEAK_STR];
-  RUNTIME.animation_enable[TO_MUTE] = config[C_PIXEL_RING_STR][PR_TO_MUTE_STR];
-  RUNTIME.animation_enable[TO_UNMUTE] = config[C_PIXEL_RING_STR][PR_TO_UNMUTE_STR];
-  RUNTIME.if_mute = config[C_PIXEL_RING_STR][PR_MUTE_STR];
-
-  int leds = config[C_HARDWARE_STR][HW_LED_NUM];
-  RUNTIME.LEDs.number = leds;
-  int spi_bus = config[C_HARDWARE_STR][HW_LED_SPI_BUS];
-  RUNTIME.LEDs.spi_bus = spi_bus;
-  int spi_dev = config[C_HARDWARE_STR][HW_LED_SPI_DEV];
-  RUNTIME.LEDs.spi_dev = spi_dev;
-
-  int power_pin = config[C_HARDWARE_STR][HW_POWER_STR][HW_GPIO_PIN];
-  RUNTIME.power.pin = power_pin;
-  int power_value = config[C_HARDWARE_STR][HW_POWER_STR][HW_GPIO_VAL];
-  RUNTIME.power.val = power_value;
+  strcpy(RUNTIME.hardware_model, config->hardwareModelName().c_str());
+  RUNTIME.max_brightness = config->brightness();
+  RUNTIME.animation_color.idle = textToColour(config->idleColor().c_str());
+  RUNTIME.animation_color.listen = textToColour(config->listenColor().c_str());
+  RUNTIME.animation_color.speak = textToColour(config->speakColor().c_str());
+  RUNTIME.animation_color.mute = textToColour(config->muteColor().c_str());
+  RUNTIME.animation_color.unmute = textToColour(config->unmuteColor().c_str());
+  RUNTIME.animation_enable[ON_IDLE] = config->isIdleAnimationEnabled();
+  RUNTIME.animation_enable[ON_LISTEN] = config->isListenAnimationEnabled();
+  RUNTIME.animation_enable[ON_SPEAK] = config->isSpeakAnimationEnabled();
+  RUNTIME.animation_enable[TO_MUTE] = config->isMuteAnimationEnabled();
+  RUNTIME.animation_enable[TO_UNMUTE] = config->isUnmuteAnimationEnabled();
+  RUNTIME.if_mute = config->shouldMute();
+  RUNTIME.LEDs.number = config->ledsAmount();
+  RUNTIME.LEDs.spi_bus = config->spiBusNumber();
+  RUNTIME.LEDs.spi_dev = config->spiDevNumber();
+  RUNTIME.power.pin = config->powerPin();
+  RUNTIME.power.val = config->powerPinValue();
 }
 
 /**

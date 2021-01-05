@@ -18,7 +18,7 @@ Adjust **config.json** with required values. Note that it'll be automatically co
   "webSocketAddress": "ws://127.0.0.1:2700",
   "respeaker": {
     "kwsModelName": "snowboy.umdl",
-    "kwsSensitivity": 0.6,
+    "kwsSensitivity": "0.6",
     "listeningTimeout": 8000,
     "wakeWordDetectionOffset": 300,
     "gainLevel": 10,
@@ -64,16 +64,16 @@ cmake ..
 make -j
 ```
 
-This script will produce **respeaker-core** executable in the build folder.
+This script will produce **respeaker_core** executable in the build folder.
 
 ### Running
 
-Make sure you have VOSK or other ASR server running. By default **respeaker-core** uses localhost address trying to establish connection with WS server. You may want to change it to the actual server's address.
+Make sure you have VOSK or other ASR server running. By default **respeaker_core** uses localhost address trying to establish connection with WS server. You may want to change it to the actual server's address.
 
 User the following commands to start a speech streaming process:
 ```shell script
 cd build
-./respeaker-core
+./respeaker_core
 ```
 
 You should see a configuration log and a message about successfull connectivity to WS server and Pixel Ring (implemented based on [snips-respeaker-skill](https://github.com/snipsco/snips-skill-respeaker) sources).
@@ -86,7 +86,7 @@ Current app's logic assumes the following chain:
 - We give a 300ms delay to prevent sending audio chunks to the WS server. It's required for the hotword's filtering which we don't wanna get a transcribe for.
 - Send audio chunks to WS server until we receive a final transcribe or reach a 8s timeout. Transcibe or timeout event also changes Pixel Ring state, which becomes idle.
 
-It's recommended you'll check [respeaker-core.cpp](https://github.com/sskorol/respeaker-websockets/blob/master/src/respeaker_core.cpp) source code and comments to understand what's going on there, and customize it for your own needs.
+It's recommended you'll check [main.cpp](https://github.com/sskorol/respeaker-websockets/blob/master/src/main.cpp) source code and comments to understand what's going on there, and customize it for your own needs.
 
 ### Running as a Service
 
@@ -131,9 +131,9 @@ Adjust **Install** block with the following option:
 WantedBy=multi-user.target network-online.target
 ```
 
-Add **respeaker-core** binary to pm2:
+Add **respeaker_core** binary to pm2:
 ```shell script
-pm2 start /home/respeaker/path/to/respeaker-core --watch --name asr --time
+pm2 start /home/respeaker/path/to/respeaker_core --watch --name asr --time
 ```
 
 Save current process list:
