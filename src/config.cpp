@@ -28,11 +28,6 @@ int Config::listeningTimeout()
   return data[C_RESPEAKER_STR][RSP_LISTENING_TIMEOUT_STR];
 }
 
-int Config::wakeWordDetectionOffset()
-{
-  return data[C_RESPEAKER_STR][RSP_WAKEWORD_DETECTION_OFFSET_STR];
-}
-
 int Config::gainLevel()
 {
   return data[C_RESPEAKER_STR][RSP_GAIN_LEVEL_STR];

@@ -4,7 +4,6 @@
     "kwsModelName": "snowboy.umdl",
     "kwsSensitivity": "0.6",
     "listeningTimeout": 8000,
-    "wakeWordDetectionOffset": 300,
     "gainLevel": 10,
     "singleBeamOutput": false,
     "enableWavLog": false,

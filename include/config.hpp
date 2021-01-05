@@ -24,7 +24,6 @@ public:
   string kwsModelName();
   string kwsSensitivityLevel();
   int listeningTimeout();
-  int wakeWordDetectionOffset();
   int gainLevel();
   bool doAGC();
   bool doWaveLog();

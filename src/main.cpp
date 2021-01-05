@@ -104,8 +104,8 @@ int main(int argc, char *argv[])
       cout << "." << flush;
     }
 
-    // Wait for some time before audio chunks' sending to WS server. Otherwise, wake word might be transribed as well.
-    if (isWakeWordDetected && wsClient->isConnected() && (SteadyClock::now() - detectTime) > chrono::milliseconds(config->wakeWordDetectionOffset()))
+    // Skip the chunk with a hotword to avoid sending it for transciption.
+    if (isWakeWordDetected && wakeWordIndex < 1 && wsClient->isConnected())
     {
       wsClient->send(audioChunk);
     }
