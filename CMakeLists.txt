@@ -17,7 +17,7 @@ include_directories(
 )
 
 file(GLOB PIXEL_RING_SOURCES "${PROJECT_SOURCE_DIR}/src/*.c")
-add_executable(respeaker_core src/respeaker_core.cpp ${PIXEL_RING_SOURCES} ${PROJECT_SOURCE_DIR}/src/ws_transport.cpp)
+add_executable(respeaker_core src/main.cpp ${PIXEL_RING_SOURCES} ${PROJECT_SOURCE_DIR}/src/ws_transport.cpp ${PROJECT_SOURCE_DIR}/src/respeaker_core.cpp ${PROJECT_SOURCE_DIR}/src/config.cpp)
 
 file(COPY ${CMAKE_CURRENT_SOURCE_DIR}/config.json
     DESTINATION ${CMAKE_CURRENT_BINARY_DIR})
