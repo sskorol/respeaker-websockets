@@ -8,7 +8,9 @@ Make sure you've already installed **librespeaker** on your Respeaker Core V2 bo
 
 This project also depends on [IXWebSocket library](https://machinezone.github.io/IXWebSocket/) which was manually built and added as a static lib. However, if for some reason you need an advanced socket configuration, try to rebuild **IXWebSocket** manually following the official guide.
 
-Setup [Vosk ASR server](https://github.com/sskorol/asr-server). We'll use this server later for sending audio chunks from Respeaker board.
+Setup [Vosk ASR server](https://github.com/sskorol/asr-server). We'll use this server later for sending audio chunks from ReSpeaker board.
+
+![image](https://user-images.githubusercontent.com/6638780/102908650-6ec77480-4480-11eb-8bfd-b8f3c65efd79.png)
 
 ### Configuration
 
@@ -72,8 +74,7 @@ Make sure you have VOSK or other ASR server running. By default **respeaker_core
 
 User the following commands to start a speech streaming process:
 ```shell script
-cd build
-./respeaker_core
+cd build && ./respeaker_core
 ```
 
 You should see a configuration log and a message about successfull connectivity to WS server and Pixel Ring (implemented based on [snips-respeaker-skill](https://github.com/snipsco/snips-skill-respeaker) sources).
