@@ -7,12 +7,11 @@ This project is a quick start guide for revealing [Alango](http://www.alango.com
 Make sure you installed all the required dependencies on your Respeaker Core V2 board (assuming you already have their [official debian distribution](http://respeaker.seeed.io/images/respeakerv2/debian/20180801/respeaker-debian-9-lxqt-sd-20180801-4gb.img.xz)):
 
 ```shell script
-sudo apt-get update && apt-get upgrade
-sudo apt-get install -y cmake \
-  libupm1 \
+sudo apt-get update && sudo apt-get -y upgrade
+sudo apt-get install -y \
+  cmake \
   mraa-tools \
   zlib1g-dev \
-  librespeaker \
   librespeaker-dev \
   libsndfile1-dev \
   libasound2-dev
@@ -102,7 +101,7 @@ Make sure you have VOSK or other ASR server running. By default **respeaker_core
 
 Use the following commands to start a speech streaming process:
 ```shell script
-cd build && ./respeaker_core
+./respeaker_core
 ```
 
 You should see a configuration log and a message about successfull connectivity to WS server and Pixel Ring (implemented based on [snips-respeaker-skill](https://github.com/snipsco/snips-skill-respeaker) sources).
