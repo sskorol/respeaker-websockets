@@ -7,6 +7,7 @@ WsTransport::WsTransport() {
 
 bool WsTransport::connect(string wsAddress)
 {
+#ifndef EMULATION
   client.setUrl(wsAddress);
   client.setPingInterval(WS_PING_INTERVAL);
   client.disablePerMessageDeflate();
@@ -45,20 +46,26 @@ bool WsTransport::connect(string wsAddress)
   {
     this_thread::sleep_for(chrono::seconds(MICRO_TIMEOUT));
   }
-
+#else
+    _isConnected = true;
+#endif
   return _isConnected;
 }
 
 void WsTransport::disconnect()
 {
   if (_isConnected) {
+#ifndef EMULATION
     client.stop();
+#endif
   }
 }
 
 void WsTransport::send(string audioChunk)
 {
+#ifndef EMULATION
   client.sendBinary(audioChunk);
+#endif
 }
 
 bool WsTransport::isConnected() {

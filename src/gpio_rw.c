@@ -3,6 +3,9 @@
 
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <stdlib.h>
 
 int cGPIO_export(int pin)
 {
