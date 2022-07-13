@@ -149,8 +149,8 @@ void PixelRing::worker()
             default: on_disabled();
                 break;
         }
+        cAPA102_Clear_All();
     }
-    cAPA102_Clear_All();
 }
 
 bool PixelRing::delay_on_state(int ms, State state)
