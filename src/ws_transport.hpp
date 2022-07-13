@@ -8,11 +8,12 @@
 /**
  * See WebSocket docs: https://machinezone.github.io/IXWebSocket/
  */
-extern "C"
-{
 #include "verbose.h"
-}
+
+#ifndef EMULATION
 #include <ixwebsocket/IXWebSocket.h>
+#endif
+
 #include "json.hpp"
 #include <chrono>
 
@@ -24,7 +25,9 @@ using TimePoint = chrono::time_point<SteadyClock>;
 class WsTransport
 {
 private:
+#ifndef EMULATION
   ix::WebSocket client;
+#endif
   bool _isConnected;
   bool _isTranscribeReceived;
 

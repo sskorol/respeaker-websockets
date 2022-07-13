@@ -15,6 +15,14 @@
 
 #include "cAPA102.h"
 
+#ifdef EMULATION
+#include <netdb.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <netinet/udp.h>
+#include <string.h>
+#endif
+
 static cAPA102_LEDs cAPA012_BUF = {0, -1, NULL, 31};
 
 /**
@@ -122,19 +130,19 @@ void cAPA102_Clear_All(void)
 
 void cAPA102_Refresh(void)
 {
-    int ret;
     uint32_t i;
     uint32_t buf_len = 4 + 4 * cAPA012_BUF.number + (cAPA012_BUF.number + 15) / 16 + 1;
     uint8_t *ptr, *qtr;
     uint8_t *tx = (uint8_t *)malloc(buf_len);
-
+#ifndef EMULATION
+    int ret;
     struct spi_ioc_transfer tr = {
         .tx_buf = (unsigned long)tx,
         .len = buf_len,
         .speed_hz = BITRATE,
         .bits_per_word = 8,
     };
-
+#endif
     for (i = 0; i < 4; i++)
         *(tx + i) = 0x00;
     qtr = tx + 4;
@@ -150,9 +158,13 @@ void cAPA102_Refresh(void)
     for (i = cAPA012_BUF.number * 4 + 4; i < buf_len; i++)
         *(tx + i) = 0x01;
 
+#ifndef EMULATION
     ret = ioctl(cAPA012_BUF.fd_spi, SPI_IOC_MESSAGE(1), &tr);
     if (ret < 1)
         fprintf(stdout, "[Error] can't send spi message\n");
+#else
+    send(cAPA012_BUF.fd_spi, tx, buf_len, 0);
+#endif
 
     free(tx);
 }
@@ -189,13 +201,46 @@ static int cAPA102_Open_SPI_Dev(uint8_t spi_bus, uint8_t spi_dev)
     char spi_file_buff[50];
     int fd_temp;
     sprintf(spi_file_buff, SPI_DEVICE, spi_bus, spi_dev);
+#ifndef EMULATION
     fd_temp = open(spi_file_buff, O_RDWR);
     if (-1 == fd_temp)
     {
         fprintf(stderr, "[Error] Can't open %s (try 'sudo')", spi_file_buff);
         return -1;
     }
-    ioctl(fd_temp, SPI_IOC_WR_MODE, SPI_MODE_0 | SPI_NO_CS);
-    ioctl(fd_temp, SPI_IOC_WR_MAX_SPEED_HZ, BITRATE);
+    uint8_t mode = SPI_MODE_0 | SPI_NO_CS;
+    ioctl(fd_temp, SPI_IOC_WR_MODE, &mode);
+    uint32_t speed = BITRATE;
+    ioctl(fd_temp, SPI_IOC_WR_MAX_SPEED_HZ, &speed);
+#else
+    struct hostent *host = gethostbyname("localhost");
+    if (host == NULL) {
+        perror("gethostbyname");
+        return -1;
+    }
+
+    struct sockaddr_in addr = {
+        .sin_family = host->h_addrtype,
+        .sin_port = htons(9000),
+    };
+
+    if (host->h_addrtype != AF_INET || host->h_length != sizeof(addr.sin_addr.s_addr)) {
+        fprintf(stderr, "Unknown address family\n");
+        return -1;
+    }
+
+    memcpy(&addr.sin_addr.s_addr, host->h_addr_list[0], sizeof(addr.sin_addr.s_addr));
+
+    fd_temp = socket(AF_INET, SOCK_DGRAM | SOCK_NONBLOCK, 0);
+    if (fd_temp == -1) {
+        perror("socket");
+        return -1;
+    }
+
+    if (connect(fd_temp, (struct sockaddr *)&addr, sizeof(addr)) != 0) {
+        perror("connect");
+        return -1;
+    }
+#endif
     return fd_temp;
 }

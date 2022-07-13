@@ -1,124 +1,97 @@
-#include "main.hpp"
+#include <iostream>
+#include <csignal>
+#include <chrono>
 
-void enablePixelRing(Config* config)
-{
-  setupPixelRing(config);
+#include "config.hpp"
+#include "ws_transport.hpp"
+#include "pixel_ring.hpp"
+#include "respeaker_core.hpp"
 
-  if (-1 == setPowerPin())
-    cleanup(EXIT_FAILURE);
+#include "verbose.h"
 
-  RUNTIME.curr_state = RUNTIME.if_mute ? TO_MUTE : TO_UNMUTE;
-  RUNTIME.if_update = 1;
+// using namespace respeaker;
+using SteadyClock = chrono::steady_clock;
+using TimePoint = chrono::time_point<SteadyClock>;
 
-  if (-1 == cAPA102_Init(RUNTIME.LEDs.number,
-                         RUNTIME.LEDs.spi_bus,
-                         RUNTIME.LEDs.spi_dev,
-                         GLOBAL_BRIGHTNESS))
-    cleanup(EXIT_FAILURE);
+// Common definitions
+#define CONFIG_FILE "config.json"
 
-  // It makes no sense to continue if WS is unavailable.
-  wsClient = new WsTransport();
-  if (!wsClient->connect(config->webSocketAddress()))
-  {
-    verbose(VV_INFO, stdout, "Unable to connect to WS server. Quitting...");
-    cleanup(EXIT_FAILURE);
-  }
-}
-
-/**
- * Exit program and release all the resources.
- */
-void cleanup(int status)
-{
-  if (wsClient != nullptr) {
-    wsClient->disconnect();
-  }
-  resetPowerPin();
-  cAPA102_Close();
-  pthread_cancel(RUNTIME.curr_thread);
-  exit(status);
-}
+// Common flow flags
+static sig_atomic_t shouldStopListening = false;
 
 /**
  * Make sure we correctly handle exit signals to close resouces.
  */
-void handleQuit(int signal)
+static void handleQuit(int)
 {
-  verbose(VV_INFO, stdout, "Caught signal %d. Terminating...", signal);
-  shouldStopListening = true;
-  RUNTIME.if_terminate = 1;
-  pthread_cancel(RUNTIME.curr_thread);
-}
-
-void configureSignalHandler()
-{
-  struct sigaction sig_int_handler;
-  sig_int_handler.sa_handler = handleQuit;
-  sigemptyset(&sig_int_handler.sa_mask);
-  sig_int_handler.sa_flags = 0;
-  sigaction(SIGINT, &sig_int_handler, NULL);
-  sigaction(SIGTERM, &sig_int_handler, NULL);
+    shouldStopListening = true;
 }
 
 int main(int argc, char *argv[])
 {
-  configureSignalHandler();
-  setVerbose(VV_INFO);
-  
-  config = new Config(CONFIG_FILE);
-  if (!config->isRead())
-  {
-    verbose(VV_INFO, stdout, "Unable to read json config. Quitting...");
-    exit(EXIT_FAILURE);
-  }
+    signal(SIGINT, handleQuit);
+    signal(SIGTERM, handleQuit);
 
-  respeakerCore = new RespeakerCore(config);
-  if (!respeakerCore->startListening(&shouldStopListening))
-  {
-    verbose(VV_INFO, stdout, "Unable to start the respeaker node chain. Quitting...");
-    cleanup(EXIT_FAILURE);
-  }
-  else
-  {
-    enablePixelRing(config);
+    setVerbose(VVV_DEBUG);
+
+    Config config(CONFIG_FILE);
+    RespeakerCore respeakerCore(config);
+    WsTransport wsClient;
+
+    if (!wsClient.connect(config.webSocketAddress()))
+    {
+        verbose(VV_INFO, stdout, "Unable to connect to WS server. Quitting...");
+        return EXIT_FAILURE;
+    }
+
+    PixelRing pixelRing(config);
+
+    if (!respeakerCore.startListening())
+    {
+        verbose(VV_INFO, stdout, "Unable to start the respeaker node chain. Quitting...");
+        return EXIT_FAILURE;
+    }
+
     verbose(VV_INFO, stdout, "Press CTRL-C to exit");
-  }
 
-  int wakeWordIndex = 0, direction = 0;
-  TimePoint detectTime;
-  string audioChunk;
+    int wakeWordIndex = 0, direction = 0;
+    bool isWakeWordDetected = false;
+    TimePoint detectTime;
+    std::string audioChunk;
 
-  while (!shouldStopListening && trackPixelRingState())
-  {
-    audioChunk = respeakerCore->processAudio(wakeWordIndex);
-
-    if (wakeWordIndex >= 1)
+    while (!shouldStopListening)
     {
-      isWakeWordDetected = true;
-      wsClient->isTranscribed(false);
-      detectTime = SteadyClock::now();
-      direction = respeakerCore->soundDirection();
-      verbose(VV_INFO, stdout, "Wake word is detected, direction = %d.", direction);
-      changePixelRingState(TO_UNMUTE);
-    } else {
-      cout << "." << flush;
+        audioChunk = respeakerCore.processAudio(wakeWordIndex);
+//        usleep(1000);
+//        wakeWordIndex = rand() % 10000 == 0;
+
+        if (wakeWordIndex >= 1)
+        {
+            isWakeWordDetected = true;
+            wsClient.isTranscribed(false);
+            detectTime = SteadyClock::now();
+            direction = respeakerCore.soundDirection();
+            verbose(VV_INFO, stdout, "Wake word is detected, direction = %d.", direction);
+            pixelRing.setState(PixelRing::TO_UNMUTE);
+        }
+
+        // Skip the chunk with a hotword to avoid sending it for transciption.
+        if (isWakeWordDetected && wakeWordIndex < 1 && wsClient.isConnected())
+        {
+            wsClient.send(audioChunk);
+        }
+
+        // Reset wake word detection flag when wait timeout occurs or if we received a final transcribe from WS server.
+        if (isWakeWordDetected && ((SteadyClock::now() - detectTime) > chrono::milliseconds(config.listeningTimeout()) || wsClient.isTranscribeReceived()))
+        {
+            isWakeWordDetected = false;
+            wsClient.isTranscribed(false);
+            pixelRing.setState(PixelRing::TO_MUTE);
+        }
     }
 
-    // Skip the chunk with a hotword to avoid sending it for transciption.
-    if (isWakeWordDetected && wakeWordIndex < 1 && wsClient->isConnected())
-    {
-      wsClient->send(audioChunk);
-    }
+    respeakerCore.stopAudioProcessing();
+    wsClient.disconnect();
 
-    // Reset wake word detection flag when wait timeout occurs or if we received a final transcribe from WS server.
-    if (isWakeWordDetected && ((SteadyClock::now() - detectTime) > chrono::milliseconds(config->listeningTimeout()) || wsClient->isTranscribeReceived()))
-    {
-      isWakeWordDetected = false;
-      wsClient->isTranscribed(false);
-      changePixelRingState(TO_MUTE);
-    }
-  }
-
-  respeakerCore->stopAudioProcessing();
-  cleanup(EXIT_SUCCESS);
+    return 0;
 }

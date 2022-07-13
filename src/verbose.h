@@ -1,6 +1,11 @@
 #ifndef __VERBOSE_H__
 #define __VERBOSE_H__
-#include "common.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+#include <stdio.h>
 
 #define NONE "\033[m"
 #define RED "\033[1;32;31m"
@@ -29,5 +34,9 @@ typedef enum
 int verbose(VERBOSE lvl, FILE *stream, const char * __restrict__ format, ...);
 
 void setVerbose(VERBOSE lvl);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif
