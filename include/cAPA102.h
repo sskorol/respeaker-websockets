@@ -23,6 +23,7 @@
 #include <sys/mman.h>
 #include <sys/ioctl.h>
 #include <linux/spi/spidev.h>
+#include "common.h"
 
 #define B_OFF_SET 1
 #define G_OFF_SET 2
@@ -55,7 +56,7 @@ typedef struct
  * @returns:  0\ Success
  *           -1\ Error
  */
-int cAPA102_Init(uint32_t led_num, uint8_t spi_bus, uint8_t spi_dev, uint8_t brightness);
+int cAPA102_Init(HW_LED_SPEC hwLedSpec, uint8_t brightness);
 
 /**
  * @brief: Change the global brightness and fresh

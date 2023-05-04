@@ -1,8 +1,9 @@
 #include "ws_transport.hpp"
 
-WsTransport::WsTransport() {
+WsTransport::WsTransport(string location) {
   _isTranscribeReceived = false;
   _isConnected = false;
+  _location = location;
 }
 
 bool WsTransport::connect(string wsAddress)
@@ -16,25 +17,66 @@ bool WsTransport::connect(string wsAddress)
     if (type == ix::WebSocketMessageType::Message)
     {
       // When we receive a final transcibe from Vosk server, it'll contain "result" and "text" props.
-      auto payload = json::parse(msg->str);
-      auto result = payload["result"];
-      string text = payload["text"];
-
-      if (result != nullptr && !text.empty())
+      try
       {
-        verbose(VV_INFO, stdout, "Transcribe: %s", text.c_str());
-        this->_isTranscribeReceived = true;
+        auto message = msg->str;
+
+        if (!message.empty())
+        {
+          auto payload = json::parse(message);
+          auto partial = payload.value("partial", "");
+          auto text = payload.value("text", "");
+
+          if (!text.empty())
+          {
+            logInfo("Transcribe: {}", text);
+            this->_isTranscribeReceived = true;
+          }
+          else
+          {
+            if (!partial.empty())
+            {
+              logInfo("Partial: {}", partial);
+            }
+            this->_isTranscribeReceived = false;
+          }
+        }
+      }
+      catch (json::parse_error& pe)
+      {
+        logInfo("JSON parse error: {}", pe.what());
+        this->_isTranscribeReceived = false;
+      }
+      catch(nlohmann::detail::type_error& te)
+      {
+        logInfo("TypeError: {}", te.what());
+        this->_isTranscribeReceived = false;
       }
     }
     else if (type == ix::WebSocketMessageType::Open)
     {
-      verbose(VV_INFO, stdout, "Connected to ASR server");
+      logInfo("Connected to ASR server");
       this->_isConnected = true;
+
+      // Send default device location to server
+      json response;
+      response["location"] = this->_location;
+      client.sendText(response.dump());
     }
     else if (type == ix::WebSocketMessageType::Close)
     {
-      verbose(VV_INFO, stdout, "Disconnected from ASR server");
+      logInfo("Disconnected from ASR server: code - {}, reason - {}", msg->closeInfo.code, msg->closeInfo.reason);
       this->_isConnected = false;
+    }
+    else if (type == ix::WebSocketMessageType::Error)
+    {
+      logInfo(
+        "Error: {}. Retries: {}. Wait time(ms): {}. HTTP Status: {}.",
+        msg->errorInfo.reason,
+        msg->errorInfo.retries,
+        msg->errorInfo.wait_time,
+        msg->errorInfo.http_status
+      );
     }
   });
 

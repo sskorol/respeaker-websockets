@@ -21,6 +21,7 @@ public:
   bool isRead();
 
   // Respeaker
+  string room();
   string kwsModelName();
   string kwsSensitivityLevel();
   int listeningTimeout();

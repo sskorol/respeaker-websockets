@@ -1,10 +1,11 @@
 {
-  "webSocketAddress": "ws://127.0.0.1:2700",
+  "webSocketAddress": "ws://192.168.1.140:8000/api/v1/speech/",
   "respeaker": {
     "kwsModelName": "snowboy.umdl",
     "kwsSensitivity": "0.6",
+    "room": "lobby",
     "listeningTimeout": 8000,
-    "gainLevel": 10,
+    "gainLevel": -7,
     "singleBeamOutput": false,
     "enableWavLog": false,
     "agc": true

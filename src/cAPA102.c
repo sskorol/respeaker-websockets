@@ -36,8 +36,12 @@ static int cAPA102_Try_Open_SPI_Dev(uint8_t retry_times, uint8_t retry_gap_sec, 
  */
 static int cAPA102_Open_SPI_Dev(uint8_t spi_bus, uint8_t spi_dev);
 
-int cAPA102_Init(uint32_t led_num, uint8_t spi_bus, uint8_t spi_dev, uint8_t brightness)
+int cAPA102_Init(HW_LED_SPEC hwLedSpec, uint8_t brightness)
 {
+    uint32_t led_num = hwLedSpec.number;
+    uint8_t spi_bus = hwLedSpec.spi_bus;
+    uint8_t spi_dev = hwLedSpec.spi_dev;
+
     cAPA012_BUF.number = led_num;
     if (brightness > 31)
         cAPA012_BUF.brightness = 0xFF;
@@ -130,9 +134,9 @@ void cAPA102_Refresh(void)
 
     struct spi_ioc_transfer tr = {
         .tx_buf = (unsigned long)tx,
-        .len = buf_len,
-        .speed_hz = BITRATE,
-        .bits_per_word = 8,
+        .len = buf_len
+        // .speed_hz = BITRATE,
+        // .bits_per_word = 8,
     };
 
     for (i = 0; i < 4; i++)
@@ -195,7 +199,9 @@ static int cAPA102_Open_SPI_Dev(uint8_t spi_bus, uint8_t spi_dev)
         fprintf(stderr, "[Error] Can't open %s (try 'sudo')", spi_file_buff);
         return -1;
     }
-    ioctl(fd_temp, SPI_IOC_WR_MODE, SPI_MODE_0 | SPI_NO_CS);
-    ioctl(fd_temp, SPI_IOC_WR_MAX_SPEED_HZ, BITRATE);
+    uint8_t mode = SPI_MODE_0 | SPI_NO_CS;
+    ioctl(fd_temp, SPI_IOC_WR_MODE, &mode);
+    uint32_t speed = BITRATE;
+    ioctl(fd_temp, SPI_IOC_WR_MAX_SPEED_HZ, &speed);
     return fd_temp;
 }

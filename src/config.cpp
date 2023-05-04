@@ -13,6 +13,11 @@ bool Config::isRead()
 }
 
 // Respeaker Config
+string Config::room()
+{
+  return data[C_RESPEAKER_STR][RSP_ROOM_STR];
+}
+
 string Config::kwsModelName()
 {
   return data[C_RESPEAKER_STR][RSP_KWS_MODEL_STR];

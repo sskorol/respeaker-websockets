@@ -13,6 +13,7 @@ extern "C"
 #include "verbose.h"
 }
 #include <ixwebsocket/IXWebSocket.h>
+#include "log.hpp"
 #include "json.hpp"
 #include <chrono>
 
@@ -27,9 +28,10 @@ private:
   ix::WebSocket client;
   bool _isConnected;
   bool _isTranscribeReceived;
+  string _location;
 
 public:
-  WsTransport();
+  WsTransport(string location);
   bool connect(string wsAddress);
   void disconnect();
   void send(string audioChunk);

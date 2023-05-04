@@ -34,6 +34,7 @@ typedef enum
 #define C_HARDWARE_STR "hardware"
 #define C_PIXEL_RING_STR "pixelRing"
 
+#define RSP_ROOM_STR "room"
 #define RSP_KWS_MODEL_STR "kwsModelName"
 #define RSP_KWS_SENSITIVITY_STR "kwsSensitivity"
 #define RSP_LISTENING_TIMEOUT_STR "listeningTimeout"

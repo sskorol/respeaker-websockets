@@ -20,10 +20,12 @@ extern "C"
 #include <thread>
 #include <fstream>
 
+#include "log.hpp"
 #include "config.hpp"
 #include "ws_transport.hpp"
 #include "pixel_ring.hpp"
 #include "respeaker_core.hpp"
+#include <alsa/asoundlib.h>
 
 using namespace std;
 // using namespace respeaker;
@@ -63,6 +65,10 @@ RUNTIME_OPTIONS RUNTIME = {
     {1, 1, 1, 1, 1, 1},
     /* Mute*/
     0};
+
+void setAlsaMasterVolume(long volume);
+
+string runUnixCommandAndCaptureOutput(string cmd);
 
 void handleQuit(int signal);
 
