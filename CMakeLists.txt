@@ -13,7 +13,6 @@ pkg_check_modules(RESPEAKER REQUIRED respeaker>=${MIN_LIBRESPEAKER_VERSION})
 include_directories(
     ${PROJECT_SOURCE_DIR}/include
     ${PROJECT_SOURCE_DIR}/src
-    ${PROJECT_SOURCE_DIR}/lib
     ${RESPEAKER_INCLUDE_DIRS}
 )
 
@@ -28,17 +27,15 @@ link_directories(
     ${RESPEAKER_LIBRARY_DIRS}
 )
 
-find_library(IXWEBSOCKET ixwebsocket lib)
-find_library(SPDLOG spdlog lib)
+find_package(ixwebsocket REQUIRED)
+find_package(spdlog REQUIRED)
 find_package(fmt REQUIRED)
 
 target_link_libraries(
     respeaker_core
     ${LIBGFLAGS_PATH} -lpthread -lz -lstdc++fs -lasound
     ${RESPEAKER_LIBRARIES}
-    ${IXWEBSOCKET}
-    ${SPDLOG}
+    ixwebsocket::ixwebsocket
+    spdlog::spdlog
     fmt::fmt
 )
-
-target_compile_definitions(respeaker_core PUBLIC SPDLOG_COMPILED_LIB)

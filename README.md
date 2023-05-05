@@ -4,8 +4,56 @@ This project is a quick start guide for revealing [Alango](http://www.alango.com
 
 ### Requirements
 
-Make sure you installed all the required dependencies on your Respeaker Core V2 board (assuming you already have their [official debian distribution](http://respeaker.seeed.io/images/respeakerv2/debian/20180801/respeaker-debian-9-lxqt-sd-20180801-4gb.img.xz)):
+Make sure you installed all the required dependencies on your Respeaker Core V2 board (assuming you already have their [official debian distribution](http://respeaker.seeed.io/images/respeakerv2/debian/20180801/respeaker-debian-9-lxqt-sd-20180801-4gb.img.xz)).
 
+After flashing the image to SD card, you may found that your root partition size is ~4GB. To expand its size to the real SD card size, do the following:
+```shell script
+fdisk /dev/mmcblk0      # change it to your device name
+Command (m for help): p # check available partitions
+Command (m for help): d # delete partition
+Selected partition 2    # you'll likely have a boot with idx == 1, so select the other one
+Command (m for help): p # ensure there's only one (if you had boot) or nothing left
+Command (m for help): n # create new partition
+Select (default p): p   # primary
+Partition number: 2     # the same idx as was deleted
+# Leave defaults for first and last sectors
+Command (m for help): w # alter partition
+sudo reboot
+resize2fs /dev/mmcblk1p2 # or whatever idx you've altered
+df -h                    # should now show a full size
+```
+
+You may also want to add swap:
+```shell script
+sudo swapon --show
+free -h
+df -h
+sudo fallocate -l 2G /swapfile
+ls -lh /swapfile
+sudo chmod 600 /swapfile
+sudo mkswap /swapfile
+sudo swapon /swapfile
+sudo swapon --show
+free -h
+sudo cp /etc/fstab /etc/fstab.bak
+echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
+sudo nano /etc/sysctl.conf
+ # add -> vm.swappiness=10
+ # add -> vm.vfs_cache_pressure=50
+```
+
+Edit source lists due to Debian Stretch EOL:
+```shell script
+sudo nano /etc/apt/sources.list
+```
+
+Ensure the following lines:
+```shell script
+deb http://archive.debian.org/debian stretch main contrib non-free
+deb [arch=armhf] http://respeaker.seeed.io/deb stretch main
+```
+
+Install required dependencies:
 ```shell script
 sudo apt-get update && sudo apt-get -y upgrade
 sudo apt-get install -y \
@@ -14,18 +62,50 @@ sudo apt-get install -y \
   zlib1g-dev \
   librespeaker-dev \
   libsndfile1-dev \
-  libasound2-dev
+  libasound2-dev \
+  zip
+```
+
+Install CMake 3.10.3:
+```shell script
+wget https://github.com/Kitware/CMake/releases/download/v3.10.3/cmake-3.10.3.zip
+unzip cmake-3.10.3.zip && cd cmake-3.10.3
+./bootstrap && make -j$(nproc) && sudo make install
 ```
 
 Don't forget to reboot your board after installation!
 
-This project also depends on [IXWebSocket library](https://machinezone.github.io/IXWebSocket/). You can build it the following way:
+This project also depends on several libraries:
+
+[IXWebSocket](https://machinezone.github.io/IXWebSocket):
 
 ```shell script
 git clone https://github.com/machinezone/IXWebSocket.git
 cd IXWebSocket && mkdir build && cd build
-cmake ..
-make -j
+cmake .. -DUSE_ZLIB=1
+make -j$(nproc)
+sudo make install
+```
+
+[FMT](https://github.com/fmtlib/fmt):
+
+```shell script
+git clone https://github.com/fmtlib/fmt.git
+cd fmt && git checkout tags/8.1.1
+mkdir build && cd build
+cmake .. -DFMT_TEST=OFF
+make -j$(nproc)
+sudo make install
+```
+
+[SPDLOG](https://github.com/gabime/spdlog):
+
+```shell script
+git clone https://github.com/gabime/spdlog.git
+cd spdlog && git checkout tags/v1.10.0
+mkdir build && cd build
+cmake .. -DSPDLOG_FMT_EXTERNAL=ON -DSPDLOG_BUILD_EXAMPLE=OFF -DSPDLOG_BUILD_TESTS=OFF -DSPDLOG_BUILD_BENCH=OFF
+make -j$(nproc)
 sudo make install
 ```
 
@@ -45,13 +125,13 @@ cd respeaker-websockets && mkdir build
 Adjust **config.json** with required values. Note that it'll be automatically copied to the build folder.
 ```json
 {
-  "webSocketAddress": "ws://127.0.0.1:2700",
+  "webSocketAddress": "ws://127.0.0.1/api/v1/speech/",
   "respeaker": {
     "kwsModelName": "snowboy.umdl",
     "kwsSensitivity": "0.6",
+    "room": "lobby",
     "listeningTimeout": 8000,
-    "wakeWordDetectionOffset": 300,
-    "gainLevel": 10,
+    "gainLevel": -7,
     "singleBeamOutput": false,
     "enableWavLog": false,
     "agc": true
@@ -131,42 +211,7 @@ sudo npm install pm2@latest -g
 
 Create pm2 startup script:
 ```schell script
-pm2 startup -u respeaker --hp /home/respeaker
-sudo env PATH=$PATH:/usr/bin pm2 startup systemd -u respeaker --hp /home/respeaker
-```
-
-Open pm2 service for editing:
-```shell script
-sudo nano /etc/systemd/system/pm2-respeaker.service
-```
-
-Adjust **Unit** block with the following options:
-```shell script
-Wants=network-online.target
-After=network.target network-online.target
-```
-
-Adjust **Service** block with the following option:
-```shell script
-LimitRTPRIO=99
-```
-
-It's very important to set this limit (also known as **ulimit -r**). Otherwise, you won't be able to start this service on boot.
-
-Adjust **Install** block with the following option:
-```shell script
-WantedBy=multi-user.target network-online.target
-```
-
-Restart pm2 service:
-```shell script
-sudo systemctl daemon-reload
-sudo systemctl restart pm2-respeaker
-```
-
-Add **respeaker_core** binary to pm2:
-```shell script
-pm2 start respeaker_core --watch --name asr --time
+pm2 start ecosystem.config.js
 ```
 
 Save current process list:
