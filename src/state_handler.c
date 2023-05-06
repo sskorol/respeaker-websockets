@@ -4,17 +4,21 @@
 
 extern RUNTIME_OPTIONS RUNTIME;
 
-static void *(*state_functions[STATE_NUM])() = {
+typedef void *(*StateHandlerFunction)();
+
+static StateHandlerFunction state_handlers[STATE_NUM] = {
     on_idle,
     on_listen,
     on_speak,
-    to_mute,
-    to_unmute,
-    on_disabled};
+    on_mute,
+    on_unmute,
+    on_disabled
+};
 
 void state_machine_update(void)
 {
     void *ret_val = "NONE";
+    int pthread_result;
 
     if (RUNTIME.animation_enable[RUNTIME.curr_state])
     {
@@ -22,7 +26,12 @@ void state_machine_update(void)
         // block until the previous terminate
         pthread_join(RUNTIME.curr_thread, &ret_val);
         verbose(VVV_DEBUG, stdout, "Previous thread " PURPLE "%s" NONE " terminated with success", (char *)ret_val);
-        pthread_create(&RUNTIME.curr_thread, NULL, state_functions[RUNTIME.curr_state], NULL);
+        pthread_result = pthread_create(&RUNTIME.curr_thread, NULL, state_handlers[RUNTIME.curr_state], NULL);
+        
+        if (pthread_result != 0)
+        {
+            fprintf(stderr, "Error creating thread in %s: %s\n", __FUNCTION__, strerror(pthread_result));
+        }
     }
     else
     {

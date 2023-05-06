@@ -37,8 +37,12 @@ using TimePoint = chrono::time_point<SteadyClock>;
 
 // Key entities
 WsTransport *wsClient;
-Config *config;
+shared_ptr<Config> config;
 RespeakerCore* respeakerCore;
+
+const int BUFFER_SIZE = 128;
+const int DEFAULT_VOLUME = 70;
+const int WAKE_WORD_VOLUME = 20;
 
 // Common flow flags
 static bool isWakeWordDetected = false;
@@ -68,7 +72,9 @@ RUNTIME_OPTIONS RUNTIME = {
 
 void setAlsaMasterVolume(long volume);
 
-string runUnixCommandAndCaptureOutput(string cmd);
+string executeCommandAndCaptureOutput(string cmd);
+
+string setVolumeCommand(int volume);
 
 void handleQuit(int signal);
 
@@ -76,7 +82,9 @@ void configureSignalHandler();
 
 void cleanup(int status);
 
-void enablePixelRing(Config* config);
+void createWebSocketClient(WsTransport *&wsClient, shared_ptr<Config> config);
+
+void enablePixelRing(shared_ptr<Config> config);
 
 bool trackPixelRingState();
 

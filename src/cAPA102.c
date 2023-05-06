@@ -135,8 +135,6 @@ void cAPA102_Refresh(void)
     struct spi_ioc_transfer tr = {
         .tx_buf = (unsigned long)tx,
         .len = buf_len
-        // .speed_hz = BITRATE,
-        // .bits_per_word = 8,
     };
 
     for (i = 0; i < 4; i++)
@@ -192,12 +190,13 @@ static int cAPA102_Open_SPI_Dev(uint8_t spi_bus, uint8_t spi_dev)
 {
     char spi_file_buff[50];
     int fd_temp;
+    const int error_code = -1;
     sprintf(spi_file_buff, SPI_DEVICE, spi_bus, spi_dev);
     fd_temp = open(spi_file_buff, O_RDWR);
-    if (-1 == fd_temp)
+    if (error_code == fd_temp)
     {
         fprintf(stderr, "[Error] Can't open %s (try 'sudo')", spi_file_buff);
-        return -1;
+        return error_code;
     }
     uint8_t mode = SPI_MODE_0 | SPI_NO_CS;
     ioctl(fd_temp, SPI_IOC_WR_MODE, &mode);

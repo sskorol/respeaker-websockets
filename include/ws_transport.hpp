@@ -28,10 +28,14 @@ private:
   ix::WebSocket client;
   bool _isConnected;
   bool _isTranscribeReceived;
-  string _location;
+  string _deviceLocation;
 
 public:
-  WsTransport(string location);
+  WsTransport(string deviceLocation);
+  void handleMessage(const ix::WebSocketMessagePtr &msg);
+  void handleOpen(const ix::WebSocketMessagePtr &msg);
+  void handleClose(const ix::WebSocketMessagePtr &msg);
+  void handleError(const ix::WebSocketMessagePtr &msg);
   bool connect(string wsAddress);
   void disconnect();
   void send(string audioChunk);

@@ -1,6 +1,6 @@
 #include "respeaker_core.hpp"
 
-RespeakerCore::RespeakerCore(Config* config)
+RespeakerCore::RespeakerCore(shared_ptr<Config> config)
 {
   string inputSource = "default";
   string kwsPath = string(getenv("PWD")) + "/models/";

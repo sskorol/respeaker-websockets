@@ -31,16 +31,13 @@ SoundController::SoundController(unsigned int _rate, int _channels, int _seconds
 
 	/* Allocate parameters object and fill it with default values*/
 	snd_pcm_hw_params_alloca(&params);
-
 	snd_pcm_hw_params_any(pcm_handle, params);
 
 	/* Set parameters */
-	if (pcm = snd_pcm_hw_params_set_access(pcm_handle, params,
-					SND_PCM_ACCESS_RW_INTERLEAVED) < 0) 
+	if (pcm = snd_pcm_hw_params_set_access(pcm_handle, params, SND_PCM_ACCESS_RW_INTERLEAVED) < 0)
 		logInfo("ERROR: Can't set interleaved mode. {}\n", snd_strerror(pcm));
 
-	if (pcm = snd_pcm_hw_params_set_format(pcm_handle, params,
-						SND_PCM_FORMAT_S16_LE) < 0) 
+	if (pcm = snd_pcm_hw_params_set_format(pcm_handle, params, SND_PCM_FORMAT_S16_LE) < 0)
 		logInfo("ERROR: Can't set format. {}\n", snd_strerror(pcm));
 
 	if (pcm = snd_pcm_hw_params_set_channels(pcm_handle, params, channels) < 0) 
@@ -55,7 +52,6 @@ SoundController::SoundController(unsigned int _rate, int _channels, int _seconds
 
 	/* Resume information */
 	logInfo("PCM name: '{}'\n", snd_pcm_name(pcm_handle));
-
 	logInfo("PCM state: {}\n", snd_pcm_state_name(snd_pcm_state(pcm_handle)));
 
 	snd_pcm_hw_params_get_channels(params, &tmp);
@@ -68,7 +64,6 @@ SoundController::SoundController(unsigned int _rate, int _channels, int _seconds
 
 	snd_pcm_hw_params_get_rate(params, &tmp, 0);
 	logInfo("rate: {} bps\n", tmp);
-
 	logInfo("seconds: {}\n", seconds);	
 
 	/* Allocate buffer to hold single period */
@@ -80,7 +75,7 @@ SoundController::SoundController(unsigned int _rate, int _channels, int _seconds
 	snd_pcm_hw_params_get_period_time(params, &tmp, NULL);
 }
 
-void SoundController::play()
+void SoundController::play() const
 {
 	for (loops = (seconds * 1000000) / tmp; loops > 0; loops--) {
 

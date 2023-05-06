@@ -15,8 +15,8 @@
 #define ON_IDLE_STR "on_idle"
 #define ON_LISTEN_STR "on_listen"
 #define ON_SPEAK_STR "on_speak"
-#define TO_MUTE_STR "to_mute"
-#define TO_UNMUTE_STR "to_unmute"
+#define ON_MUTE_STR "on_mute"
+#define ON_UNMUTE_STR "on_unmute"
 #define ON_DISABLED_STR "on_disabled"
 
 typedef enum
@@ -24,8 +24,8 @@ typedef enum
     ON_IDLE = 0,
     ON_LISTEN,
     ON_SPEAK,
-    TO_MUTE,
-    TO_UNMUTE,
+    ON_MUTE,
+    ON_UNMUTE,
     ON_DISABLED
 } STATE;
 
@@ -56,8 +56,8 @@ typedef enum
 #define PR_ON_IDLE_STR "onIdle"
 #define PR_ON_LISTEN_STR "onListen"
 #define PR_ON_SPEAK_STR "onSpeak"
-#define PR_TO_MUTE_STR "toMute"
-#define PR_TO_UNMUTE_STR "toUnmute"
+#define PR_TO_MUTE_STR "onMute"
+#define PR_TO_UNMUTE_STR "onUnmute"
 #define PR_IDLE_COLOR_STR "idleColor"
 #define PR_LISTEN_COLOR_STR "listenColor"
 #define PR_SPEAK_COLOR_STR "speakColor"

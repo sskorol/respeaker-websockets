@@ -2,6 +2,8 @@
 #define __PIXEL_RING_HPP__
 
 #include "config.hpp"
+#include <unordered_map>
+#include <memory>
 extern "C"
 {
 #include "common.h"
@@ -14,43 +16,23 @@ extern RUNTIME_OPTIONS RUNTIME;
 
 using namespace std;
 
+unordered_map<std::string, uint32_t> colorMap = {
+    {"red", RED_C},
+    {"green", GREEN_C},
+    {"blue", BLUE_C},
+    {"yellow", YELLOW_C},
+    {"purple", PURPLE_C},
+    {"teal", TEAL_C},
+    {"orange", ORANGE_C},
+};
+
 /**
  * Basic color conversion API. 
  */
-uint32_t textToColour(const char *cTxt)
+uint32_t textToColour(const std::string& cTxt)
 {
-  if (strlen(cTxt))
-  {
-    if (!strcmp(cTxt, "red"))
-    {
-      return RED_C;
-    }
-    else if (!strcmp(cTxt, "green"))
-    {
-      return GREEN_C;
-    }
-    else if (!strcmp(cTxt, "blue"))
-    {
-      return BLUE_C;
-    }
-    else if (!strcmp(cTxt, "yellow"))
-    {
-      return YELLOW_C;
-    }
-    else if (!strcmp(cTxt, "purple"))
-    {
-      return PURPLE_C;
-    }
-    else if (!strcmp(cTxt, "teal"))
-    {
-      return TEAL_C;
-    }
-    else if (!strcmp(cTxt, "orange"))
-    {
-      return ORANGE_C;
-    }
-  }
-  return 0;
+    auto it = colorMap.find(cTxt);
+    return (it != colorMap.end()) ? it->second : 0;
 }
 
 /**
@@ -106,7 +88,7 @@ int resetPowerPin()
 /**
  * Populate pixel ring runtime options.
  */
-void setupPixelRing(Config* config)
+void setupPixelRing(shared_ptr<Config> config)
 {
   strcpy(RUNTIME.hardware_model, config->hardwareModelName().c_str());
   RUNTIME.max_brightness = config->brightness();
@@ -118,8 +100,8 @@ void setupPixelRing(Config* config)
   RUNTIME.animation_enable[ON_IDLE] = config->isIdleAnimationEnabled();
   RUNTIME.animation_enable[ON_LISTEN] = config->isListenAnimationEnabled();
   RUNTIME.animation_enable[ON_SPEAK] = config->isSpeakAnimationEnabled();
-  RUNTIME.animation_enable[TO_MUTE] = config->isMuteAnimationEnabled();
-  RUNTIME.animation_enable[TO_UNMUTE] = config->isUnmuteAnimationEnabled();
+  RUNTIME.animation_enable[ON_MUTE] = config->isMuteAnimationEnabled();
+  RUNTIME.animation_enable[ON_UNMUTE] = config->isUnmuteAnimationEnabled();
   RUNTIME.if_mute = config->shouldMute();
   RUNTIME.LEDs.number = config->ledsAmount();
   RUNTIME.LEDs.spi_bus = config->spiBusNumber();

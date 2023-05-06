@@ -11,9 +11,9 @@ void *on_listen(void);
 
 void *on_speak(void);
 
-void *to_mute(void);
+void *on_mute(void);
 
-void *to_unmute(void);
+void *on_unmute(void);
 
 void *on_disabled(void);
 

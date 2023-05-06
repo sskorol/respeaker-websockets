@@ -13,6 +13,7 @@
 #include "config.hpp"
 
 using namespace respeaker;
+using namespace std;
 
 class RespeakerCore
 {
@@ -23,7 +24,7 @@ private:
   unique_ptr<SnowboyMbDoaKwsNode> hotwordNode;
   unique_ptr<ReSpeaker> respeaker;
 public:
-  RespeakerCore(Config* config);
+  RespeakerCore(shared_ptr<Config> config);
   bool startListening(bool* interrupt);
   int channels();
   int rate();

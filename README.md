@@ -170,7 +170,7 @@ Build source code:
 ```shell script
 cd build
 cmake ..
-make -j
+make -j$(nproc)
 ```
 
 This script will produce **respeaker_core** executable in the build folder.

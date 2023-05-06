@@ -4,6 +4,9 @@
 
 extern RUNTIME_OPTIONS RUNTIME;
 
+#define ANIMATION_DELAY_MS 1000
+#define BRIGHTNESS_STEP (RUNTIME.max_brightness / STEP_COUNT)
+
 /* @brief: Consider that each color has 255 level brightness,
  *         this function remap the origin rgb value to a certain
  *         level of brightness.
@@ -22,20 +25,25 @@ static uint32_t remap_4byte(uint32_t color, uint8_t brightness)
 static void delay_on_state(int ms, int state)
 {
     for (int j = 0; j < ms && RUNTIME.curr_state == state; j++)
-        usleep(1000);
+    {
+        usleep(ANIMATION_DELAY_MS);
+        if (RUNTIME.curr_state != state)
+        {
+            break;
+        }
+    }
 }
 
 // 0
 void *on_idle()
 {
     int curr_bri = 0;
-    uint8_t led, step;
+    uint8_t led;
     verbose(VVV_DEBUG, stdout, PURPLE "[%s]" NONE " animation started", __FUNCTION__);
     RUNTIME.if_update = 0;
     cAPA102_Clear_All();
     srand((unsigned int)time(NULL));
 
-    step = RUNTIME.max_brightness / STEP_COUNT;
     while (RUNTIME.curr_state == ON_IDLE)
     {
         delay_on_state(2000, ON_IDLE);
@@ -44,7 +52,7 @@ void *on_idle()
 
         for (curr_bri = 0; curr_bri < RUNTIME.max_brightness &&
                            RUNTIME.curr_state == ON_IDLE;
-             curr_bri += step)
+             curr_bri += BRIGHTNESS_STEP)
         {
             cAPA102_Set_Pixel_4byte(led, remap_4byte(RUNTIME.animation_color.idle, curr_bri));
             cAPA102_Refresh();
@@ -53,7 +61,7 @@ void *on_idle()
         curr_bri = RUNTIME.max_brightness;
         for (curr_bri = RUNTIME.max_brightness; curr_bri > 0 &&
                                                  RUNTIME.curr_state == ON_IDLE;
-             curr_bri -= step)
+             curr_bri -= BRIGHTNESS_STEP)
         {
             cAPA102_Set_Pixel_4byte(led, remap_4byte(RUNTIME.animation_color.idle, curr_bri));
             cAPA102_Refresh();
@@ -95,18 +103,16 @@ void *on_listen()
 void *on_speak()
 {
     uint8_t j;
-    uint8_t step;
     int curr_bri = 0;
     verbose(VVV_DEBUG, stdout, PURPLE "[%s]" NONE " animation started", __FUNCTION__);
     RUNTIME.if_update = 0;
     cAPA102_Clear_All();
 
-    step = RUNTIME.max_brightness / STEP_COUNT;
     while (RUNTIME.curr_state == ON_SPEAK)
     {
         for (curr_bri = 0; curr_bri < RUNTIME.max_brightness &&
                            RUNTIME.curr_state == ON_SPEAK;
-             curr_bri += step)
+             curr_bri += BRIGHTNESS_STEP)
         {
             for (j = 0; j < RUNTIME.LEDs.number && RUNTIME.curr_state == ON_SPEAK; j++)
                 cAPA102_Set_Pixel_4byte(j, remap_4byte(RUNTIME.animation_color.speak, curr_bri));
@@ -116,7 +122,7 @@ void *on_speak()
         curr_bri = RUNTIME.max_brightness;
         for (curr_bri = RUNTIME.max_brightness; curr_bri > 0 &&
                                                  RUNTIME.curr_state == ON_SPEAK;
-             curr_bri -= step)
+             curr_bri -= BRIGHTNESS_STEP)
         {
             for (j = 0; j < RUNTIME.LEDs.number && RUNTIME.curr_state == ON_SPEAK; j++)
                 cAPA102_Set_Pixel_4byte(j, remap_4byte(RUNTIME.animation_color.speak, curr_bri));
@@ -132,77 +138,73 @@ void *on_speak()
 }
 
 // 3
-void *to_mute()
+void *on_mute()
 {
     uint8_t j;
-    uint8_t step;
     int curr_bri = 0;
     verbose(VVV_DEBUG, stdout, PURPLE "[%s]" NONE " animation started", __FUNCTION__);
     RUNTIME.if_update = 0;
     cAPA102_Clear_All();
 
-    step = RUNTIME.max_brightness / STEP_COUNT;
-    for (curr_bri = 0; curr_bri < RUNTIME.max_brightness && RUNTIME.curr_state == TO_MUTE; curr_bri += step)
+    for (curr_bri = 0; curr_bri < RUNTIME.max_brightness && RUNTIME.curr_state == ON_MUTE; curr_bri += BRIGHTNESS_STEP)
     {
-        for (j = 0; j < RUNTIME.LEDs.number && RUNTIME.curr_state == TO_MUTE; j++)
+        for (j = 0; j < RUNTIME.LEDs.number && RUNTIME.curr_state == ON_MUTE; j++)
             cAPA102_Set_Pixel_4byte(j, remap_4byte(RUNTIME.animation_color.mute, curr_bri));
         cAPA102_Refresh();
-        delay_on_state(50, TO_MUTE);
+        delay_on_state(50, ON_MUTE);
     }
     curr_bri = RUNTIME.max_brightness;
-    for (curr_bri = RUNTIME.max_brightness; curr_bri > 0 && RUNTIME.curr_state == TO_MUTE; curr_bri -= step)
+    for (curr_bri = RUNTIME.max_brightness; curr_bri > 0 && RUNTIME.curr_state == ON_MUTE; curr_bri -= BRIGHTNESS_STEP)
     {
-        for (j = 0; j < RUNTIME.LEDs.number && RUNTIME.curr_state == TO_MUTE; j++)
+        for (j = 0; j < RUNTIME.LEDs.number && RUNTIME.curr_state == ON_MUTE; j++)
             cAPA102_Set_Pixel_4byte(j, remap_4byte(RUNTIME.animation_color.mute, curr_bri));
         cAPA102_Refresh();
-        delay_on_state(50, TO_MUTE);
+        delay_on_state(50, ON_MUTE);
     }
     cAPA102_Clear_All();
     cAPA102_Refresh();
-    if (TO_MUTE == RUNTIME.curr_state)
+    if (ON_MUTE == RUNTIME.curr_state)
     {
         RUNTIME.curr_state = ON_IDLE;
         RUNTIME.if_update = 1;
     }
     cAPA102_Clear_All();
-    return ((void *)"TO_MUTE");
+    return ((void *)"ON_MUTE");
 }
 
 // 4
-void *to_unmute()
+void *on_unmute()
 {
     uint8_t j;
-    uint8_t step;
     int curr_bri = 0;
     verbose(VVV_DEBUG, stdout, PURPLE "[%s]" NONE " animation started", __FUNCTION__);
     RUNTIME.if_update = 0;
     cAPA102_Clear_All();
 
-    step = RUNTIME.max_brightness / STEP_COUNT;
-    for (curr_bri = 0; curr_bri < RUNTIME.max_brightness && RUNTIME.curr_state == TO_UNMUTE; curr_bri += step)
+    for (curr_bri = 0; curr_bri < RUNTIME.max_brightness && RUNTIME.curr_state == ON_UNMUTE; curr_bri += BRIGHTNESS_STEP)
     {
-        for (j = 0; j < RUNTIME.LEDs.number && RUNTIME.curr_state == TO_UNMUTE; j++)
+        for (j = 0; j < RUNTIME.LEDs.number && RUNTIME.curr_state == ON_UNMUTE; j++)
             cAPA102_Set_Pixel_4byte(j, remap_4byte(RUNTIME.animation_color.unmute, curr_bri));
         cAPA102_Refresh();
-        delay_on_state(50, TO_UNMUTE);
+        delay_on_state(50, ON_UNMUTE);
     }
     curr_bri = RUNTIME.max_brightness;
-    for (curr_bri = RUNTIME.max_brightness; curr_bri > 0 && RUNTIME.curr_state == TO_UNMUTE; curr_bri -= step)
+    for (curr_bri = RUNTIME.max_brightness; curr_bri > 0 && RUNTIME.curr_state == ON_UNMUTE; curr_bri -= BRIGHTNESS_STEP)
     {
-        for (j = 0; j < RUNTIME.LEDs.number && RUNTIME.curr_state == TO_UNMUTE; j++)
+        for (j = 0; j < RUNTIME.LEDs.number && RUNTIME.curr_state == ON_UNMUTE; j++)
             cAPA102_Set_Pixel_4byte(j, remap_4byte(RUNTIME.animation_color.unmute, curr_bri));
         cAPA102_Refresh();
-        delay_on_state(50, TO_UNMUTE);
+        delay_on_state(50, ON_UNMUTE);
     }
     cAPA102_Clear_All();
     cAPA102_Refresh();
-    if (TO_UNMUTE == RUNTIME.curr_state)
+    if (ON_UNMUTE == RUNTIME.curr_state)
     {
         RUNTIME.curr_state = ON_IDLE;
         RUNTIME.if_update = 1;
     }
     cAPA102_Clear_All();
-    return ((void *)"TO_UNMUTE");
+    return ((void *)"ON_UNMUTE");
 }
 
 // 5

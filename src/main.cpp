@@ -31,9 +31,9 @@ void setAlsaMasterVolume(long volume)
   }
 }
 
-string runUnixCommandAndCaptureOutput(string cmd)
+string executeCommandAndCaptureOutput(string cmd)
 {
-  char buffer[128];
+  char buffer[BUFFER_SIZE];
   string result = "";
   FILE *pipe = popen(cmd.c_str(), "r");
 
@@ -43,7 +43,7 @@ string runUnixCommandAndCaptureOutput(string cmd)
     {
       while (!feof(pipe))
       {
-        if (fgets(buffer, 128, pipe) != NULL)
+        if (fgets(buffer, BUFFER_SIZE, pipe) != NULL)
           result += buffer;
       }
     }
@@ -57,7 +57,18 @@ string runUnixCommandAndCaptureOutput(string cmd)
   return result;
 }
 
-void enablePixelRing(Config *config)
+void createWebSocketClient(WsTransport *&wsClient, shared_ptr<Config> config)
+{
+  // It makes no sense to continue if WS is unavailable.
+  wsClient = new WsTransport(config->room());
+  if (!wsClient->connect(config->webSocketAddress()))
+  {
+    logInfo("Unable to connect to WS server. Quitting...");
+    cleanup(EXIT_FAILURE);
+  }
+}
+
+void enablePixelRing(shared_ptr<Config> config)
 {
   setupPixelRing(config);
 
@@ -66,16 +77,8 @@ void enablePixelRing(Config *config)
     cleanup(EXIT_FAILURE);
   }
 
-  RUNTIME.curr_state = RUNTIME.if_mute ? TO_MUTE : TO_UNMUTE;
+  RUNTIME.curr_state = RUNTIME.if_mute ? ON_MUTE : ON_UNMUTE;
   state_machine_update();
-
-  // It makes no sense to continue if WS is unavailable.
-  wsClient = new WsTransport(config->room());
-  if (!wsClient->connect(config->webSocketAddress()))
-  {
-    logInfo("Unable to connect to WS server. Quitting...");
-    cleanup(EXIT_FAILURE);
-  }
 }
 
 /**
@@ -113,14 +116,22 @@ void configureSignalHandler()
   sigaction(SIGTERM, &sig_int_handler, NULL);
 }
 
+string setVolumeCommand(int volume)
+{
+    string command = "pactl set-sink-volume 0 ";
+    command += to_string(volume);
+    command += "%";
+    return command;
+}
+
 int main(int argc, char *argv[])
 {
   registerLoggers();
-  logInfo("---> Starting new session...");
+  logInfo("Starting new session...");
   configureSignalHandler();
   setVerbose(VV_INFO);
 
-  config = new Config(CONFIG_FILE);
+  config = make_shared<Config>(CONFIG_FILE);
   if (!config->isRead())
   {
     logInfo("Unable to read json config. Quitting...");
@@ -136,6 +147,7 @@ int main(int argc, char *argv[])
   else
   {
     enablePixelRing(config);
+    createWebSocketClient(wsClient, config);
     logInfo("Press CTRL-C to exit");
   }
 
@@ -154,8 +166,8 @@ int main(int argc, char *argv[])
       detectTime = SteadyClock::now();
       direction = respeakerCore->soundDirection();
       logInfo("Wake word is detected, direction = {}.", direction);
-      changePixelRingState(TO_UNMUTE);
-      runUnixCommandAndCaptureOutput("pactl set-sink-volume 0 20%");
+      changePixelRingState(ON_UNMUTE);
+      executeCommandAndCaptureOutput(setVolumeCommand(WAKE_WORD_VOLUME));
     }
 
     // Skip the chunk with a hotword to avoid sending it for transciption.
@@ -169,8 +181,8 @@ int main(int argc, char *argv[])
     {
       isWakeWordDetected = false;
       wsClient->isTranscribed(false);
-      changePixelRingState(TO_MUTE);
-      runUnixCommandAndCaptureOutput("pactl set-sink-volume 0 70%");
+      changePixelRingState(ON_MUTE);
+      executeCommandAndCaptureOutput(setVolumeCommand(DEFAULT_VOLUME));
     }
   }
 

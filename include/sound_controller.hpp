@@ -1,5 +1,5 @@
 #ifndef SOUND_CONTROLLER_C
-#define SOUND_COMNTROLLER_C
+#define SOUND_CONTROLLER_C
 
 #include <alsa/asoundlib.h>
 #include "log.hpp"
@@ -18,7 +18,7 @@ private:
 	int buff_size, loops;
 public:
   SoundController(unsigned int rate, int channels, int seconds);
-  void play();
+  void play() const;
 };
 
 #endif
