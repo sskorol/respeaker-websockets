@@ -34,6 +34,7 @@ int verbose(VERBOSE lvl, FILE *stream, const char *__restrict format, ...)
     int ret = vfprintf(stream, format, args);
     va_end(args);
     fputs("\n", stream);
+    fflush(stream);
     return ret;
 }
 
