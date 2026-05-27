@@ -4,17 +4,12 @@ void enablePixelRing(Config* config)
 {
   setupPixelRing(config);
 
-  if (-1 == setPowerPin())
+  if (-1 == setPowerPin() || -1 == cAPA102_Init(RUNTIME.LEDs, GLOBAL_BRIGHTNESS)) {
     cleanup(EXIT_FAILURE);
+  }
 
   RUNTIME.curr_state = RUNTIME.if_mute ? TO_MUTE : TO_UNMUTE;
-  RUNTIME.if_update = 1;
-
-  if (-1 == cAPA102_Init(RUNTIME.LEDs.number,
-                         RUNTIME.LEDs.spi_bus,
-                         RUNTIME.LEDs.spi_dev,
-                         GLOBAL_BRIGHTNESS))
-    cleanup(EXIT_FAILURE);
+  state_machine_update();
 
   // It makes no sense to continue if WS is unavailable.
   wsClient = new WsTransport();
@@ -100,22 +95,13 @@ int main(int argc, char *argv[])
       direction = respeakerCore->soundDirection();
       verbose(VV_INFO, stdout, "Wake word is detected, direction = %d.", direction);
       changePixelRingState(TO_UNMUTE);
-    } else {
-      cout << "." << flush;
     }
 
-    // Skip the chunk with a hotword to avoid sending it for transciption.
-    if (isWakeWordDetected && wakeWordIndex < 1 && wsClient->isConnected())
+    // Always-stream mode: server does VAD/endpointing on /stt/vosk.
+    // Wake-word detection above is kept for DOA logging + LED feedback only.
+    if (wakeWordIndex < 1 && wsClient->isConnected())
     {
       wsClient->send(audioChunk);
-    }
-
-    // Reset wake word detection flag when wait timeout occurs or if we received a final transcribe from WS server.
-    if (isWakeWordDetected && ((SteadyClock::now() - detectTime) > chrono::milliseconds(config->listeningTimeout()) || wsClient->isTranscribeReceived()))
-    {
-      isWakeWordDetected = false;
-      wsClient->isTranscribed(false);
-      changePixelRingState(TO_MUTE);
     }
   }
 

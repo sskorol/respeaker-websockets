@@ -30,6 +30,11 @@ bool WsTransport::connect(string wsAddress)
     {
       verbose(VV_INFO, stdout, "Connected to ASR server");
       this->_isConnected = true;
+
+      // Send default device location to server
+      json response;
+      response["location"] = "livingRoom";
+      client.sendText(response.dump());
     }
     else if (type == ix::WebSocketMessageType::Close)
     {

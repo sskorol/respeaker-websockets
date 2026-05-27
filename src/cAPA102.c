@@ -36,8 +36,12 @@ static int cAPA102_Try_Open_SPI_Dev(uint8_t retry_times, uint8_t retry_gap_sec, 
  */
 static int cAPA102_Open_SPI_Dev(uint8_t spi_bus, uint8_t spi_dev);
 
-int cAPA102_Init(uint32_t led_num, uint8_t spi_bus, uint8_t spi_dev, uint8_t brightness)
+int cAPA102_Init(HW_LED_SPEC hwLedSpec, uint8_t brightness)
 {
+    uint32_t led_num = hwLedSpec.number;
+    uint8_t spi_bus = hwLedSpec.spi_bus;
+    uint8_t spi_dev = hwLedSpec.spi_dev;
+    
     cAPA012_BUF.number = led_num;
     if (brightness > 31)
         cAPA012_BUF.brightness = 0xFF;
