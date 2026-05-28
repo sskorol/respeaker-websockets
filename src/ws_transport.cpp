@@ -1,8 +1,30 @@
 #include "ws_transport.hpp"
 
-WsTransport::WsTransport() {
+#include <chrono>
+#include <cstdio>
+#include <thread>
+
+namespace
+{
+constexpr const char *kSpeakingUntilFile = "/tmp/respeaker_speaking_until_ms";
+constexpr const char *kThinkingClearFile = "/tmp/respeaker_thinking_clear_ms";
+
+long long readEpochMsFile(const char *path)
+{
+    FILE *f = fopen(path, "r");
+    if (f == nullptr) return 0;
+    long long v = 0;
+    int parsed = fscanf(f, "%lld", &v);
+    fclose(f);
+    return (parsed == 1 && v > 0) ? v : 0;
+}
+}
+
+WsTransport::WsTransport()
+{
   _isTranscribeReceived = false;
   _isConnected = false;
+  _thinkingSetMs = 0;
 }
 
 bool WsTransport::connect(string wsAddress)
@@ -15,30 +37,44 @@ bool WsTransport::connect(string wsAddress)
 
     if (type == ix::WebSocketMessageType::Message)
     {
-      // When we receive a final transcibe from Vosk server, it'll contain "result" and "text" props.
-      auto payload = json::parse(msg->str);
-      auto result = payload["result"];
-      string text = payload["text"];
-
-      if (result != nullptr && !text.empty())
+      // Typed JSON events from STT (`/stt/stream`): SttFinal, SttPartial, SttDropped.
+      // Wire shape mirrors shared/protocol.py — discriminated by `type`. STT POSTs voice
+      // /prompt itself; the board only needs these events for LED feedback.
+      auto payload = json::parse(msg->str, nullptr, false);
+      if (payload.is_discarded() || !payload.contains("type"))
       {
-        verbose(VV_INFO, stdout, "Transcribe: %s", text.c_str());
+        return;
+      }
+      const std::string frameType = payload["type"].get<std::string>();
+      if (frameType == "final")
+      {
+        const std::string text = payload.value("text", "");
+        verbose(VV_INFO, stdout, "Final: %s", text.c_str());
         this->_isTranscribeReceived = true;
+        // Mark thinking-set timestamp. Clear paths (no cap, event-driven):
+        //   • Speaker rising edge → clearThinking() from main loop.
+        //   • respeaker_speaker writes thinking-clear file > this value when voice
+        //     sends an `interrupted` text frame (turn cancelled, no playback).
+        using namespace std::chrono;
+        long long now_ms = duration_cast<milliseconds>(
+                               system_clock::now().time_since_epoch())
+                               .count();
+        this->_thinkingSetMs = now_ms;
+      }
+      else if (frameType == "dropped")
+      {
+        verbose(VV_INFO, stdout, "Dropped: reason=%s",
+                payload.value("reason", "").c_str());
       }
     }
     else if (type == ix::WebSocketMessageType::Open)
     {
-      verbose(VV_INFO, stdout, "Connected to ASR server");
+      verbose(VV_INFO, stdout, "Connected to STT server");
       this->_isConnected = true;
-
-      // Send default device location to server
-      json response;
-      response["location"] = "livingRoom";
-      client.sendText(response.dump());
     }
     else if (type == ix::WebSocketMessageType::Close)
     {
-      verbose(VV_INFO, stdout, "Disconnected from ASR server");
+      verbose(VV_INFO, stdout, "Disconnected from STT server");
       this->_isConnected = false;
     }
   });
@@ -76,4 +112,38 @@ bool WsTransport::isTranscribeReceived() {
 
 void WsTransport::isTranscribed(bool state) {
   _isTranscribeReceived = state;
+}
+
+bool WsTransport::isThinking() {
+  long long set_ms = _thinkingSetMs.load();
+  if (set_ms <= 0) return false;
+  // External cancel: respeaker_speaker bumps thinking-clear-ms on `interrupted`.
+  long long clear_ms = readEpochMsFile(kThinkingClearFile);
+  if (clear_ms > set_ms) return false;
+  // Safety cap: voice's 409 paths (turn-in-progress, self-echo) never trigger
+  // playback or `interrupted`, so without this cap _thinkingSetMs sticks forever
+  // and the mic→WS gate stays closed. Self-clear after THINKING_MAX_AGE_MS.
+  using namespace std::chrono;
+  long long now_ms = duration_cast<milliseconds>(
+                         system_clock::now().time_since_epoch())
+                         .count();
+  if (now_ms - set_ms > THINKING_MAX_AGE_MS) {
+    _thinkingSetMs = 0;
+    return false;
+  }
+  return true;
+}
+
+void WsTransport::clearThinking() {
+  _thinkingSetMs = 0;
+}
+
+bool WsTransport::isSpeakerActive() {
+  long long deadline_ms = readEpochMsFile(kSpeakingUntilFile);
+  if (deadline_ms <= 0) return false;
+  using namespace std::chrono;
+  long long now_ms = duration_cast<milliseconds>(
+                         system_clock::now().time_since_epoch())
+                         .count();
+  return now_ms < deadline_ms;
 }

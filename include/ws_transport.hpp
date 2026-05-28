@@ -5,6 +5,13 @@
 #define WS_CONNECTION_TIMEOUT 5000
 #define MICRO_TIMEOUT 1
 
+// Hard upper bound on how long isThinking() can stay true without external clear.
+// Defends against the deadlock path where voice 409s the /prompt (turn-in-progress
+// or self-echo) — no TTS playback follows, so neither the speaker rising edge nor
+// the `interrupted` text frame fires, and _thinkingSetMs would otherwise stick
+// forever, leaving the mic→WS send-gate closed and the LED stuck in ON_LISTEN.
+#define THINKING_MAX_AGE_MS 30000
+
 /**
  * See WebSocket docs: https://machinezone.github.io/IXWebSocket/
  */
@@ -14,7 +21,9 @@ extern "C"
 }
 #include <ixwebsocket/IXWebSocket.h>
 #include "json.hpp"
+#include <atomic>
 #include <chrono>
+#include <string>
 
 using namespace std;
 using json = nlohmann::json;
@@ -27,6 +36,14 @@ private:
   ix::WebSocket client;
   bool _isConnected;
   bool _isTranscribeReceived;
+  // UTC epoch ms timestamp of when SttFinal arrived. 0 means "not thinking". The
+  // event-driven clear path is speakerActive rising edge (LED owner clears in main
+  // loop) OR respeaker_speaker writes /tmp/respeaker_thinking_clear_ms > this value
+  // on receiving an `interrupted` text frame from voice. No hardcoded deadline.
+  // Atomic because the WS callback runs on a separate thread from the LED main
+  // loop and 64-bit writes are NOT atomic on the board's 32-bit ARM core — without
+  // this the main thread could see a torn value (0) and skip the ON_LISTEN state.
+  std::atomic<long long> _thinkingSetMs;
 
 public:
   WsTransport();
@@ -36,6 +53,19 @@ public:
   bool isConnected();
   bool isTranscribeReceived();
   void isTranscribed(bool state);
+
+  // Half-duplex gate. Reads UTC epoch-ms deadline written by respeaker_speaker
+  // (/tmp/respeaker_speaking_until_ms). Returns true while now < deadline. Used by
+  // the mic→WS loop in main.cpp to suppress sending audio while the Grove speaker is
+  // playing TTS — eliminates hardware-AEC convergence leak + Whisper self-echo entirely.
+  static bool isSpeakerActive();
+
+  // "Claude is thinking" LED feedback gate. True while a `final` transcript was just
+  // received and TTS hasn't started yet. Hard-capped at THINKING_MAX_AGE_MS as a safety
+  // net so a rejected /prompt (no playback, no `interrupted` frame) can't leave the
+  // mic gate closed forever.
+  bool isThinking();
+  void clearThinking();
 };
 
 #endif

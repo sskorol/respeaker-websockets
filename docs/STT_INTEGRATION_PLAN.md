@@ -1,8 +1,33 @@
 # STT integration plan — ReSpeaker Core v2 → dev box Vosk endpoint
 
-Branch: `dev/stt-integration`
+Branch: `dev/stt-integration` (board) — commit `9f20c8e` (NOT pushed)
 Date: 2026-05-27
-Status: Phase 1+2 done, Phase 3 next.
+Status: **All phases complete. End-to-end working. Not pushed yet.**
+
+## Outcome (2026-05-27)
+
+- Board pm2 `asr` process (PID 8511 at last check) streams continuously
+  via `ws://192.168.0.95:8766/stt/vosk`.
+- Dev box `python -m stt` (commit `8ac18df` on `main`) endpoints with
+  silero-VAD, transcribes with Whisper large-v3, returns Vosk-shaped
+  JSON. Endpointer reason = `silence` on natural pauses (no more 30s
+  `max_utterance` caps).
+- Sample transcripts confirmed against spoken input — accurate on
+  natural speech, weak on tech vocab, occasional Whisper hallucination
+  on ambiguous tails (filterable).
+- pm2-logrotate installed on board: max 5MB × 5 retain, gz, daily.
+
+## Open follow-ups
+
+- Whisper hallucination filter — extend `_filter_hallucinations` in
+  `stt/services/faster_whisper_engine.py` with new artifacts
+  ("Амінь.", "Давай подивимось.", "Я не дуже розумію, чи..."). Or
+  drop sub-1.5s outputs whose char/sec ratio is too low.
+- Whisper `initial_prompt` for context.
+- VAD threshold tuning (`STT_VOSK_VAD_THRESHOLD`, default 0.5).
+- pm2 stdbuf wrapper for live transcript visibility in pm2 logs
+  (currently board side flushes only when buffer fills).
+- Push branches once happy.
 
 ## Goal
 

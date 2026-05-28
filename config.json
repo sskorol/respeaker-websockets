@@ -1,12 +1,12 @@
 {
-  "webSocketAddress": "ws://192.168.0.95:8766/stt/vosk",
+  "webSocketAddress": "ws://192.168.0.95:8766/stt/stream",
   "respeaker": {
     "kwsModelName": "snowboy.umdl",
     "kwsSensitivity": "0.6",
     "listeningTimeout": 8000,
     "gainLevel": 10,
     "singleBeamOutput": false,
-    "enableWavLog": false,
+    "enableWavLog": true,
     "agc": true
   },
   "pixelRing": {
