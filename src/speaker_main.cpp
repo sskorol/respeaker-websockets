@@ -306,6 +306,13 @@ void handleTextFrame(AlsaSink &sink, const std::string &payload)
         unsigned int sr = msg.value("sample_rate", 48000);
         unsigned int ch = msg.value("channels", 1);
         sink.open(sr, ch);
+        // Voice restart / reconnect MUST drain any audio left in the ALSA ring buffer
+        // from the previous session — otherwise the kid hears the tail of last run's
+        // TTS before the new greeting starts. drop() flushes + re-primes silence.
+        sink.drop();
+        playbackUntilMs.store(0);
+        writeSpeakingUntil(0);
+        writeThinkingClear(nowEpochMs());
     }
     else if (type == "interrupted")
     {
@@ -391,6 +398,12 @@ int main(int argc, char *argv[])
             break;
         case ix::WebSocketMessageType::Close:
             verbose(VV_INFO, stdout, "Audio WS closed (reason=%s)", msg->closeInfo.reason.c_str());
+            // Voice server went away — flush any queued audio + clear the half-duplex
+            // gate so mic isn't permanently muted while we wait for reconnect.
+            sink.drop();
+            playbackUntilMs.store(0);
+            writeSpeakingUntil(0);
+            writeThinkingClear(nowEpochMs());
             break;
         case ix::WebSocketMessageType::Error:
             verbose(V_NORMAL, stderr, "Audio WS error: %s", msg->errorInfo.reason.c_str());
