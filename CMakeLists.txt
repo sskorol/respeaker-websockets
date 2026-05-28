@@ -18,6 +18,7 @@ include_directories(
 
 file(GLOB PIXEL_RING_SOURCES "${PROJECT_SOURCE_DIR}/src/*.c")
 add_executable(respeaker_core src/main.cpp ${PIXEL_RING_SOURCES} ${PROJECT_SOURCE_DIR}/src/ws_transport.cpp ${PROJECT_SOURCE_DIR}/src/respeaker_core.cpp ${PROJECT_SOURCE_DIR}/src/config.cpp)
+add_executable(respeaker_speaker ${PROJECT_SOURCE_DIR}/src/speaker_main.cpp ${PROJECT_SOURCE_DIR}/src/verbose.c)
 
 file(COPY ${CMAKE_CURRENT_SOURCE_DIR}/config.json
     DESTINATION ${CMAKE_CURRENT_BINARY_DIR})
@@ -28,10 +29,18 @@ link_directories(
 )
 
 find_library(IXWEBSOCKET ixwebsocket lib)
+find_library(ASOUND asound)
 
 target_link_libraries(
     respeaker_core
     ${LIBGFLAGS_PATH} -lpthread -lz -lstdc++fs
     ${RESPEAKER_LIBRARIES}
+    ${IXWEBSOCKET}
+)
+
+target_link_libraries(
+    respeaker_speaker
+    -lpthread -lz
+    ${ASOUND}
     ${IXWEBSOCKET}
 )
