@@ -62,6 +62,18 @@ constexpr int kWsPingIntervalSec = 45;
 
 std::atomic<bool> shouldExit{false};
 std::atomic<int64_t> playbackUntilMs{0};
+// Tool-window mic-mute deadline. Kept SEPARATE from playbackUntilMs so that
+// real PCM chunks don't compound on top of a hold deadline (max(prev,now)+durMs
+// against an inflated playback cursor would push the speaking-until file
+// hold_deadline + total_audio_duration into the future). isSpeakerActive
+// returns true if EITHER playback OR hold is still in the future.
+std::atomic<int64_t> holdUntilMs{0};
+
+// Upper clamp on a single hold window. Defense-in-depth: any LAN-reachable
+// /audio client could otherwise send {"until_ms":9999999999999} and mute the
+// kid mic forever. 30 s comfortably covers WebSearch/WebFetch round-trips;
+// past that the next /prompt watchdog cycle has already kicked in.
+constexpr int64_t kMaxHoldMs = 30000;
 
 int64_t nowEpochMs()
 {
@@ -311,14 +323,37 @@ void handleTextFrame(AlsaSink &sink, const std::string &payload)
         // TTS before the new greeting starts. drop() flushes + re-primes silence.
         sink.drop();
         playbackUntilMs.store(0);
+        holdUntilMs.store(0);
         writeSpeakingUntil(0);
         writeThinkingClear(nowEpochMs());
+    }
+    else if (type == "hold")
+    {
+        // Voice fired a tool call (WebSearch/WebFetch) — no PCM will flow until the
+        // tool result lands and Claude resumes streaming. Extend the mic-mute
+        // deadline (held SEPARATELY from playbackUntilMs so PCM frames don't
+        // compound onto it). isSpeakerActive() honours the max of both cursors.
+        int64_t until_ms = msg.value("until_ms", static_cast<int64_t>(0));
+        if (until_ms <= 0) return;
+        int64_t now = nowEpochMs();
+        // Clamp to a hard ceiling so a malformed or hostile payload can't mute
+        // the mic forever.
+        int64_t clamped = std::min(until_ms, now + kMaxHoldMs);
+        // Allow SHRINK semantics too — PostToolUse explicitly requests a
+        // smaller hold once the tool returns so the deadline can fall toward
+        // the natural playback end. Voice owns ordering here.
+        holdUntilMs.store(clamped);
+        int64_t effective = std::max(clamped, playbackUntilMs.load());
+        writeSpeakingUntil(effective + kPlaybackTailMarginMs);
+        verbose(VV_INFO, stdout, "Tool hold until epoch ms=%lld (effective=%lld)",
+                static_cast<long long>(clamped), static_cast<long long>(effective));
     }
     else if (type == "interrupted")
     {
         verbose(VV_INFO, stdout, "Interrupt received; dropping ALSA buffer");
         sink.drop();
         playbackUntilMs.store(0);
+        holdUntilMs.store(0);
         writeSpeakingUntil(0);
         writeThinkingClear(nowEpochMs());
     }
@@ -390,6 +425,9 @@ int main(int argc, char *argv[])
                 int64_t prevAudioEnd = playbackUntilMs.load();
                 int64_t audioEnd = std::max(prevAudioEnd, now) + durMs;
                 playbackUntilMs.store(audioEnd);
+                // First real PCM after a hold collapses the hold cursor — Claude is
+                // actively speaking now, so the synthetic mute deadline is moot.
+                holdUntilMs.store(0);
                 writeSpeakingUntil(audioEnd + kPlaybackTailMarginMs);
                 sink.write(msg->str.data(), msg->str.size());
             }

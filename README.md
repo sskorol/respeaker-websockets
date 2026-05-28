@@ -1,185 +1,201 @@
-## Respeaker WebSocket Client
+# respeaker-websockets
 
-This project is a quick start guide for revealing [Alango](http://www.alango.com/) DSP algorithms bundled into Respeaker library. Basically, it allows sending pre-processed audio stream to custom ASR engine via WebSockets.
+C++ on a ReSpeaker Core v2 board. Two binaries:
 
-### Requirements
+- **`respeaker_core`** — librespeaker mic chain (Alango VEP + AEC +
+  Beamforming + Snowboy MB-DoA KWS) → STT WS client; LED state machine
+  (idle / listen / speak) driven by tmpfs flags.
+- **`respeaker_speaker`** — subscribes to a remote voice server's `/audio`
+  WS, plays PCM16 to ALSA `default` (PulseAudio bridge), writes the
+  half-duplex tmpfs flags that `respeaker_core` reads.
 
-Make sure you installed all the required dependencies on your Respeaker Core V2 board (assuming you already have their [official debian distribution](http://respeaker.seeed.io/images/respeakerv2/debian/20180801/respeaker-debian-9-lxqt-sd-20180801-4gb.img.xz)):
+Both run under pm2 as `asr` and `speaker`.
 
-```shell script
-sudo apt-get update && apt-get upgrade
-sudo apt-get install -y cmake \
-  libupm1 \
-  mraa-tools \
-  zlib1g-dev \
-  librespeaker \
-  librespeaker-dev \
-  libsndfile1-dev \
-  libasound2-dev
+This board is the kid-facing edge of a larger system whose brain (Claude
+agent SDK + STT + TTS) runs on a dev box. Cross-process architecture,
+WS protocols, and the half-duplex contract live in the server repo at
+[`docs/ARCHITECTURE.md`](https://github.com/sskorol/styletts2-ukrainian/blob/main/docs/ARCHITECTURE.md).
+
+## Hardware
+
+ReSpeaker Core V2 (ARMv7l 32-bit, Debian 9 + Snips/Alango stack).
+8-mic seeed-8ch array on the input side; 2-channel seeed-2ch sink on the
+output side. Grove speaker on the 3.5 mm jack.
+
+Memory-relevant quirk: 64-bit writes are NOT atomic on ARMv7. Any
+cross-thread 64-bit field (`std::atomic<long long>`) — torn reads
+otherwise. See `include/ws_transport.hpp::_thinkingSetMs`.
+
+## Build prerequisites
+
+Done once on the board:
+
+```sh
+sudo apt-get update && sudo apt-get install -y \
+  cmake libupm1 mraa-tools zlib1g-dev \
+  librespeaker librespeaker-dev libsndfile1-dev libasound2-dev
 ```
 
-Don't forget to reboot your board after installation!
+IXWebSocket from source (board's apt has no package):
 
-This project also depends on [IXWebSocket library](https://machinezone.github.io/IXWebSocket/). You can build it the following way:
-
-```shell script
+```sh
 git clone https://github.com/machinezone/IXWebSocket.git
 cd IXWebSocket && mkdir build && cd build
-cmake ..
-make -j
-sudo make install
+cmake .. && make -j && sudo make install
 ```
 
-Setup [Vosk ASR server](https://github.com/sskorol/asr-server). We'll use this server later for sending audio chunks from ReSpeaker board.
+`nlohmann/json.hpp` is vendored under `include/`.
 
-![image](https://user-images.githubusercontent.com/6638780/102908650-6ec77480-4480-11eb-8bfd-b8f3c65efd79.png)
+## Build / deploy / run
 
-### Installation
+Driven by `Makefile`. Run on the board (or from the dev box via
+`ssh respeaker make -C ~/projects/respeaker-websockets <target>`):
 
-Pull source code:
+```sh
+make help               # list targets
 
-```shell script
-git clone https://github.com/sskorol/respeaker-websockets.git
-cd respeaker-websockets && mkdir build
+make build              # cmake → make -j4 (the board's cmake is too old
+                        # for `cmake --build`; we shell out to make directly)
+make restart            # pm2 restart asr + speaker
+make deploy             # build + restart
+make logs               # tail pm2 logs (both procs, raw)
+make status             # pm2 list + tmpfs flag files
+make tmpfs-reset        # manually clear /tmp/respeaker_*_ms files (debug)
+make clean              # wipe build/ and reconfigure cmake
 ```
 
-Adjust **config.json** with required values. Note that it'll be automatically copied to the build folder.
+First-time pm2 registration:
+
+```sh
+pm2 start ./build/respeaker_core    --name asr     --time --watch
+pm2 start ./build/respeaker_speaker --name speaker --time
+pm2 save
+```
+
+(`respeaker_speaker` takes optional positional args `ws_url alsa_device`,
+default `ws://192.168.0.95:9100/audio` and `default`.)
+
+## Configuration
+
+`config.json` in the build dir (auto-copied from repo root by cmake):
+
 ```json
 {
-  "webSocketAddress": "ws://127.0.0.1:2700",
+  "webSocketAddress": "ws://192.168.0.95:8766/stt/stream",
   "respeaker": {
     "kwsModelName": "snowboy.umdl",
     "kwsSensitivity": "0.6",
-    "listeningTimeout": 8000,
-    "wakeWordDetectionOffset": 300,
     "gainLevel": 10,
     "singleBeamOutput": false,
-    "enableWavLog": false,
     "agc": true
   },
   "pixelRing": {
     "ledBrightness": 20,
-    "onIdle": true,
-    "onListen": true,
-    "onSpeak": true,
-    "toMute": true,
-    "toUnmute": true,
     "idleColor": "teal",
     "listenColor": "blue",
     "speakColor": "purple",
-    "muteColor": "yellow",
-    "unmuteColor": "green",
     "isMutedOnStart": false
   },
   "hardware": {
-    "model": "Respeaker Core V2",
     "ledsAmount": 12,
-    "spiBus": 0,
-    "spiDev": 0,
-    "power": {
-      "gpioPin": 66,
-      "gpioVal": 0
-    }
+    "spiBus": 0, "spiDev": 0,
+    "power": { "gpioPin": 66, "gpioVal": 0 }
   }
 }
 ```
 
-You can use any of the hotwords located in **models** folder.
+Change `webSocketAddress` to point at your STT server's `/stt/stream`
+endpoint (the dev-box STT process).
 
-Build source code:
+## What goes over the wire
 
-```shell script
-cd build
-cmake ..
-make -j
+### From the board
+
+- **mic → STT WS `/stt/stream`** (`respeaker_core` → dev box)
+  Binary PCM16 LE @ 16 kHz mono. Suppressed while `isSpeakerActive()` or
+  `isThinking()` (half-duplex gate).
+
+### Into the board
+
+- **voice `/audio` WS** (dev-box voice → `respeaker_speaker`)
+  Text JSON `AudioStart{sample_rate, channels, format}` on connect, then
+  binary PCM16 LE frames. One text `{"type":"interrupted"}` on cancel.
+- **STT `/stt/stream` WS events** (dev-box STT → `respeaker_core`)
+  `SttFinal` flips LED to `ON_LISTEN` (Claude thinking); `SttDropped`
+  noted. STT POSTs voice `/prompt` itself — board never relays text.
+
+## Half-duplex contract
+
+```
+mic→WS suppressed while:
+  isSpeakerActive()   /tmp/respeaker_speaking_until_ms > now    (TTS playing)
+  OR isThinking()     _thinkingSetMs set, clear file < set,     (Claude thinking)
+                      AND now − _thinkingSetMs < 30 000 ms      (safety cap)
 ```
 
-This script will produce **respeaker_core** executable in the build folder.
+Three signals:
 
-### Running
+| Signal | Set by | Cleared by |
+|---|---|---|
+| `_thinkingSetMs` (atomic long long, in-process) | `SttFinal` event in `ws_transport.cpp` | `speakerActive` rising edge (main loop) **OR** clear file > set **OR** > 30 s cap |
+| `/tmp/respeaker_speaking_until_ms` | `respeaker_speaker` on every PCM frame: `max(prev, now) + chunk_ms + 500 ms` | `interrupted` frame or `/audio` close — speaker writes 0 |
+| `/tmp/respeaker_thinking_clear_ms` | `respeaker_speaker` on `interrupted` frame or `/audio` close | n/a — reader compares vs `_thinkingSetMs` |
 
-Make sure you have VOSK or other ASR server running. By default **respeaker_core** uses localhost address trying to establish connection with WS server. You may want to change it to the actual server's address.
+Tmpfs writes use `write-temp + rename(2)` for atomicity so the reader
+can't observe a half-truncated zero between truncate and fprintf.
 
-Use the following commands to start a speech streaming process:
-```shell script
-cd build && ./respeaker_core
+## LED state machine
+
+Evaluated each audio chunk (~10 ms) in `respeaker_core`'s main loop:
+
+```
+speakerActive ? ON_SPEAK : (thinking ? ON_LISTEN : ON_IDLE)
 ```
 
-You should see a configuration log and a message about successfull connectivity to WS server and Pixel Ring (implemented based on [snips-respeaker-skill](https://github.com/snipsco/snips-skill-respeaker) sources).
+| State | Animation | Source |
+|---|---|---|
+| `ON_IDLE` | random single LED breathing, teal, 3 s cycles | `src/animation.c::idle_loop` |
+| `ON_LISTEN` (thinking) | 4-LED comet trail, blue, 70 ms/frame, ~840 ms/cycle | `on_listen_loop` |
+| `ON_SPEAK` | 12-LED HSV rainbow chase, 40 ms/frame, ~2.4 s/cycle | `on_speak_loop` |
 
-Current app's logic assumes the following chain:
+No hardcoded timer caps on LED states — they're driven entirely by
+`speakerActive` + `thinking` signals.
 
-- Apply rate conversion, beamforming, acoustic echo cancellation, noise suppression and automatic gain control to the input audio stream.
-- Wake word detection ("snowboy" is a default one). You can change it in **config.json**.
-- When wake word is detected, you will see it in log, as well as the direction which is tracked by DOA (direction of arrival) algorithm. Moreover, a Pixel Ring color state is changed to notify user so that they can start dictating.
-- Then we check if the pre-processed chunk is not a hotword to prevent sending it to the WS server. It's required for the hotword's filtering which we don't wanna get a transcribe for.
-- Send audio chunks to WS server until we receive a final transcribe or reach a 8s timeout. Transcibe or timeout event also changes Pixel Ring state, which becomes idle.
+## File layout
 
-It's recommended you'll check [main.cpp](https://github.com/sskorol/respeaker-websockets/blob/master/src/main.cpp) source code and comments to understand what's going on there, and customize it for your own needs.
-
-### Running as a Service
-
-Install nodejs:
-```shell script
-curl -sL https://deb.nodesource.com/setup_14.x | sudo bash -
-sudo apt-get install -y nodejs
+```
+include/
+  ws_transport.hpp       STT WS client + LED gate signals
+  config.hpp, ...
+src/
+  main.cpp               respeaker_core: librespeaker chain + LED main loop
+  speaker_main.cpp       respeaker_speaker: /audio WS subscriber + ALSA
+  ws_transport.cpp       STT event parsing, isThinking, isSpeakerActive
+  animation.c            LED animations (idle / listen / speak / mute)
+  config.cpp, respeaker_core.cpp
+  pixel_ring/, hotword/, ...
+build/                    (gitignored; cmake output, runtime config.json)
+docs/STT_INTEGRATION_PLAN.md
+Makefile                  build / restart / deploy / logs / status
+CMakeLists.txt            two targets: respeaker_core + respeaker_speaker
+config.json               source of truth for KWS sensitivity, GPIO, LED palette
 ```
 
-Install [pm2](https://pm2.keymetrics.io/docs/usage/quick-start/):
-```shell script
-sudo npm install pm2@latest -g
+## Common operations
+
+```sh
+make status                       # pm2 list + tmpfs files (debug peek)
+make tmpfs-reset                  # clear both half-duplex flags
+pm2 logs asr     --raw            # board ASR + LED loop output
+pm2 logs speaker --raw            # board /audio subscriber
+ls -la /tmp/respeaker_*_ms        # half-duplex tmpfs flags
 ```
 
-Create pm2 startup script:
-```schell script
-pm2 startup -u respeaker --hp /home/respeaker
-sudo env PATH=$PATH:/usr/bin pm2 startup systemd -u respeaker --hp /home/respeaker
-```
+When the LED is stuck in `ON_LISTEN` (thinking) and the kid mic feels
+muted: 30 s safety cap clears it. If sooner, `make tmpfs-reset` does it
+by hand. Root cause is usually that voice 409'd a `/prompt` without
+producing playback — see issue tracking in the server repo.
 
-Open pm2 service for editing:
-```shell script
-sudo nano /etc/systemd/system/pm2-respeaker.service
-```
+## License
 
-Adjust **Unit** block with the following options:
-```shell script
-Wants=network-online.target
-After=network.target network-online.target
-```
-
-Adjust **Service** block with the following option:
-```shell script
-LimitRTPRIO=99
-```
-
-It's very important to set this limit (also known as **ulimit -r**). Otherwise, you won't be able to start this service on boot.
-
-Adjust **Install** block with the following option:
-```shell script
-WantedBy=multi-user.target network-online.target
-```
-
-Restart pm2 service:
-```shell script
-sudo systemctl daemon-reload
-sudo systemctl restart pm2-respeaker
-```
-
-Add **respeaker_core** binary to pm2:
-```shell script
-pm2 start respeaker_core --watch --name asr --time
-```
-
-Save current process list:
-```shell script
-pm2 save
-```
-
-### Demo
-
-[![IMAGE ALT TEXT HERE](https://img.youtube.com/vi/IAASoRu2ANU/0.jpg)](https://www.youtube.com/watch?v=IAASoRu2ANU)
-
-### ToDo
-
-- [ ] Refactor code in an object-oriented manner.
-- [ ] Implement Google / Echo [patterns](https://github.com/respeaker/pixel_ring/blob/master/pixel_ring/pattern.py) to control Pixel Ring.
+Inherits from the original sskorol/respeaker-websockets project (MIT).
