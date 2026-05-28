@@ -144,3 +144,4 @@ string Config::webSocketAddress()
 {
   return data[C_WS_ADDRESS_STR];
 }
+

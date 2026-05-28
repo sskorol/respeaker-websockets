@@ -8,7 +8,12 @@ RespeakerCore::RespeakerCore(Config* config)
   string kwsModelPath = kwsPath + config->kwsModelName();
 
   collectorNode.reset(PulseCollectorNode::Create_48Kto16K(inputSource, BLOCK_SIZE_MS));
-  beamformingNode.reset(VepAecBeamformingNode::Create(CIRCULAR_6MIC_7BEAM, config->isSingleBeamOutput(), 6, config->doWaveLog()));
+  // ref_channel_index=7. librespeaker header doc says "starts from 0; specify 6 for v2"
+  // but empirical test (loopback/pulse_snowboy_mb_test_ref7 vs the ref=6 default) shows
+  // index 7 is the only value that puts the codec's playback-reference channel into VEP's
+  // ref_in. With ref=6 the speaker leak survives in out_6 at ~24% energy → STT self-loop.
+  // With ref=7 the post-AEC beamformed output drops to ~0.2% energy → AEC actually suppresses.
+  beamformingNode.reset(VepAecBeamformingNode::Create(CIRCULAR_6MIC_7BEAM, config->isSingleBeamOutput(), 7, config->doWaveLog()));
   hotwordNode.reset(SnowboyMbDoaKwsNode::Create(kwsResourcesPath, kwsModelPath, config->kwsSensitivityLevel(), 10, config->doAGC()));
   
   if (config->doAGC()) {

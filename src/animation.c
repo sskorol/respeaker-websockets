@@ -67,67 +67,82 @@ void *on_idle()
     return ((void *)"ON_IDLE");
 }
 
-// 1
+// 1 — "Thinking" comet. Single bright head with 3-LED fading trail rotates around the
+// ring. Reads as a spinner so the kid sees the assistant is busy thinking and the
+// pause is intentional.
 void *on_listen()
 {
-    uint8_t i, g, group;
+    uint8_t head = 0;
     verbose(VVV_DEBUG, stdout, PURPLE "[%s]" NONE " animation started", __FUNCTION__);
     RUNTIME.if_update = 0;
     cAPA102_Clear_All();
-    group = RUNTIME.LEDs.number / 3;
+    uint8_t leds = RUNTIME.LEDs.number;
+    uint8_t bri = RUNTIME.max_brightness;
+    uint8_t trail[4] = {bri, (uint8_t)(bri / 3), (uint8_t)(bri / 8), (uint8_t)(bri / 24)};
     while (RUNTIME.curr_state == ON_LISTEN)
     {
-        for (i = 0; i < 3 && RUNTIME.curr_state == ON_LISTEN; i++)
+        cAPA102_Clear_All();
+        for (uint8_t k = 0; k < 4; k++)
         {
-            for (g = 0; g < group && RUNTIME.curr_state == ON_LISTEN; g++)
-                cAPA102_Set_Pixel_4byte(g * 3 + i, remap_4byte(RUNTIME.animation_color.listen, RUNTIME.max_brightness));
-            cAPA102_Refresh();
-            delay_on_state(80, ON_LISTEN);
-            cAPA102_Clear_All();
-            delay_on_state(80, ON_LISTEN);
+            if (trail[k] == 0) break;
+            uint8_t idx = (head + leds - k) % leds;
+            cAPA102_Set_Pixel_4byte(idx, remap_4byte(RUNTIME.animation_color.listen, trail[k]));
         }
+        cAPA102_Refresh();
+        delay_on_state(70, ON_LISTEN);
+        head = (head + 1) % leds;
     }
     cAPA102_Clear_All();
+    cAPA102_Refresh();
     return ((void *)"ON_LISTEN");
 }
 
-// 2
+// HSV → 24-bit RGB. h in [0,360), s/v in [0,255]. Integer math so it runs cheap on
+// the board's ARM core without pulling in libm.
+static uint32_t hsv_to_rgb(uint16_t h, uint8_t s, uint8_t v)
+{
+    uint8_t r, g, b;
+    uint16_t region = (h / 60) % 6;
+    uint16_t rem = (h - region * 60) * 255 / 60;
+    uint8_t p = (uint8_t)(((uint16_t)v * (255 - s)) / 255);
+    uint8_t q = (uint8_t)(((uint16_t)v * (255 - ((uint32_t)s * rem) / 255)) / 255);
+    uint8_t t = (uint8_t)(((uint16_t)v * (255 - ((uint32_t)s * (255 - rem)) / 255)) / 255);
+    switch (region) {
+        case 0: r = v; g = t; b = p; break;
+        case 1: r = q; g = v; b = p; break;
+        case 2: r = p; g = v; b = t; break;
+        case 3: r = p; g = q; b = v; break;
+        case 4: r = t; g = p; b = v; break;
+        default: r = v; g = p; b = q; break;
+    }
+    return ((uint32_t)r << 16) | ((uint32_t)g << 8) | b;
+}
+
+// 2 — Rainbow chase. Each LED shows a different hue; the whole ring rotates one hue
+// step per frame so the kid sees a colorful spinning ring while the assistant speaks.
 void *on_speak()
 {
-    uint8_t j;
-    uint8_t step;
-    int curr_bri = 0;
+    uint16_t phase = 0;
     verbose(VVV_DEBUG, stdout, PURPLE "[%s]" NONE " animation started", __FUNCTION__);
     RUNTIME.if_update = 0;
     cAPA102_Clear_All();
 
-    step = RUNTIME.max_brightness / STEP_COUNT;
+    uint8_t leds = RUNTIME.LEDs.number;
+    uint16_t hue_step = leds > 0 ? (360 / leds) : 30;
+
     while (RUNTIME.curr_state == ON_SPEAK)
     {
-        for (curr_bri = 0; curr_bri < RUNTIME.max_brightness &&
-                           RUNTIME.curr_state == ON_SPEAK;
-             curr_bri += step)
+        for (uint8_t i = 0; i < leds; i++)
         {
-            for (j = 0; j < RUNTIME.LEDs.number && RUNTIME.curr_state == ON_SPEAK; j++)
-                cAPA102_Set_Pixel_4byte(j, remap_4byte(RUNTIME.animation_color.speak, curr_bri));
-            cAPA102_Refresh();
-            delay_on_state(20, ON_SPEAK);
+            uint16_t hue = ((uint16_t)(i * hue_step) + phase) % 360;
+            cAPA102_Set_Pixel_4byte(i, hsv_to_rgb(hue, 255, RUNTIME.max_brightness));
         }
-        curr_bri = RUNTIME.max_brightness;
-        for (curr_bri = RUNTIME.max_brightness; curr_bri > 0 &&
-                                                 RUNTIME.curr_state == ON_SPEAK;
-             curr_bri -= step)
-        {
-            for (j = 0; j < RUNTIME.LEDs.number && RUNTIME.curr_state == ON_SPEAK; j++)
-                cAPA102_Set_Pixel_4byte(j, remap_4byte(RUNTIME.animation_color.speak, curr_bri));
-            cAPA102_Refresh();
-            delay_on_state(20, ON_SPEAK);
-        }
-        cAPA102_Clear_All();
         cAPA102_Refresh();
-        delay_on_state(200, ON_SPEAK);
+        delay_on_state(40, ON_SPEAK);
+        phase = (phase + 6) % 360;  // ~one full rotation every 2.4 s
     }
     cAPA102_Clear_All();
+    cAPA102_Refresh();
     return ((void *)"ON_SPEAK");
 }
 

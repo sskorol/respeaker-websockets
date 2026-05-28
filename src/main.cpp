@@ -82,6 +82,7 @@ int main(int argc, char *argv[])
   int wakeWordIndex = 0, direction = 0;
   TimePoint detectTime;
   string audioChunk;
+  STATE prevLedState = ON_IDLE;
 
   while (!shouldStopListening && trackPixelRingState())
   {
@@ -95,11 +96,32 @@ int main(int argc, char *argv[])
       direction = respeakerCore->soundDirection();
       verbose(VV_INFO, stdout, "Wake word is detected, direction = %d.", direction);
       changePixelRingState(TO_UNMUTE);
+      prevLedState = TO_UNMUTE;
     }
 
-    // Always-stream mode: server does VAD/endpointing on /stt/vosk.
-    // Wake-word detection above is kept for DOA logging + LED feedback only.
-    if (wakeWordIndex < 1 && wsClient->isConnected())
+    // Three-state LED feedback driven by half-duplex signals:
+    //   ON_SPEAK  — speaker actively playing TTS (highest precedence).
+    //   ON_LISTEN — STT emitted `final`, Claude is thinking, no audio yet.
+    //   ON_IDLE   — quiet, waiting for the kid.
+    // Speaker rising edge clears the thinking deadline so the LED can't ghost-stay in
+    // ON_LISTEN once playback starts. Thinking deadline carries a 10 s safety cap
+    // inside WsTransport for the case where /prompt is 409-rejected (no playback).
+    bool speakerActive = WsTransport::isSpeakerActive();
+    if (speakerActive) wsClient->clearThinking();
+    bool thinking = wsClient->isThinking();
+    STATE targetLed = speakerActive ? ON_SPEAK : (thinking ? ON_LISTEN : ON_IDLE);
+    if (targetLed != prevLedState)
+    {
+      changePixelRingState(targetLed);
+      prevLedState = targetLed;
+    }
+
+    // Full half-duplex window: suppress mic→STT both while the Grove speaker is
+    // playing TTS AND while Claude is thinking (between SttFinal and TTS first byte).
+    // Voice already 409-rejects mid-turn prompts; this just saves bandwidth + STT
+    // compute and prevents stale audio from sitting in STT's LISTENING buf across
+    // the thinking gap.
+    if (wakeWordIndex < 1 && wsClient->isConnected() && !speakerActive && !thinking)
     {
       wsClient->send(audioChunk);
     }
