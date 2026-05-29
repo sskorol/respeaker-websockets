@@ -1,5 +1,5 @@
 {
-  "webSocketAddress": "ws://192.168.0.95:8766/stt/stream",
+  "webSocketAddress": "ws://<DEV_BOX_IP>:8766/stt/stream",
   "respeaker": {
     "kwsModelName": "alexa.umdl",
     "kwsSensitivity": "0.6",

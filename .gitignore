@@ -4,3 +4,7 @@ build/
 
 # Pre-integration config backups
 *.preinteg.bak
+
+# Live config holds the LAN address of the dev-box server — keep it local.
+# Copy config.example.json -> config.json and edit webSocketAddress.
+config.json

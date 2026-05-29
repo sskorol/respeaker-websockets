@@ -1,34 +1,101 @@
 # respeaker-websockets
 
-C++ on a ReSpeaker Core v2 board. Two binaries:
+C++ firmware for a **ReSpeaker Core v2** board. It is the kid-facing edge of
+a Ukrainian voice-chat system: the child says a wake word, talks, and a remote
+"brain" (a Claude agent + speech-to-text + text-to-speech, all running on a
+separate dev box) answers back through the board's speaker.
 
-- **`respeaker_core`** — librespeaker mic chain (Alango VEP + AEC +
-  Beamforming + Snowboy MB-DoA KWS) → STT WS client; LED state machine
-  (idle / listen / speak) driven by tmpfs flags.
-- **`respeaker_speaker`** — subscribes to a remote voice server's `/audio`
-  WS, plays PCM16 to ALSA `default` (PulseAudio bridge), writes the
-  half-duplex tmpfs flags that `respeaker_core` reads.
+This repo is **only the board side**. It speaks to the dev box over two
+WebSockets and knows nothing about Claude — it ships microphone audio out and
+plays answer audio back, gated so the two never fight each other.
 
-Both run under pm2 as `asr` and `speaker`.
+Two binaries, both run under **pm2** (`asr` and `speaker`):
 
-This board is the kid-facing edge of a larger system whose brain (Claude
-agent SDK + STT + TTS) runs on a dev box. Cross-process architecture,
-WS protocols, and the half-duplex contract live in the server repo at
-[`docs/ARCHITECTURE.md`](https://github.com/sskorol/styletts2-ukrainian/blob/main/docs/ARCHITECTURE.md).
+| Binary | pm2 name | Job |
+|---|---|---|
+| `respeaker_core` | `asr` | Runs the librespeaker mic chain (Alango VEP + AEC + beamforming + Snowboy wake-word). When the activation window is open, streams mic PCM to the dev-box **STT** WebSocket. Drives the LED ring. |
+| `respeaker_speaker` | `speaker` | Subscribes to the dev-box **voice** server's `/audio` WebSocket, plays PCM16 answer audio to ALSA, and writes the tmpfs flags that tell `respeaker_core` to stop listening while audio is playing. |
+
+## How it works
+
+### Wake word → activation window
+
+The mic is **off by default** — no audio leaves the board, so random
+parent↔kid chatter never reaches the server. Saying **"Alexa"**
+(`alexa.umdl` Snowboy model) opens a **1-minute activation window**; while it
+is open, no wake word is needed and conversation flows naturally.
+
+Each real dialog turn **slides the window forward**: the voice server pushes a
+fresh deadline to the board, so an active conversation never lapses. After one
+minute of silence the window closes and the mic goes off again until the next
+"Alexa".
+
+```
+"Alexa"  ──►  respeaker_core opens a local 1-min window  ──►  mic streams to STT
+                       ▲                                            │
+   server slides it ───┘                                           ▼
+   (/audio "activation" frame → /tmp/respeaker_active_until_ms)   STT → Claude → TTS
+                                                                    │
+                       answer audio  ◄── /audio WS ── respeaker_speaker ◄┘
+```
+
+The board self-bootstraps the window locally on wake (so the first command
+right after "Alexa" is never clipped) and also honours the server-pushed
+deadline; the two compose with `max()`. Tunables live in `src/main.cpp`:
+`ACTIVE_WINDOW_MS` (window length) and `WAKE_LED_HOLD_MS` (wake-LED hold).
+
+### Half-duplex (no echo)
+
+The board is **half-duplex**: the mic is muted whenever the speaker is
+playing or while Claude is thinking. This kills acoustic self-feedback by
+construction (no barge-in, by design). Three signals decide it:
+
+| Signal | Set by | Cleared by |
+|---|---|---|
+| `_thinkingSetMs` (in-process `atomic<long long>`) | `SttFinal` event in `ws_transport.cpp` (Claude is now thinking) | `speakerActive` rising edge **OR** clear-file > set **OR** 30 s safety cap |
+| `/tmp/respeaker_speaking_until_ms` | `respeaker_speaker` on each PCM frame: `max(prev, now) + chunk_ms + 500 ms` | `interrupted` frame or `/audio` close (writes 0) |
+| `/tmp/respeaker_thinking_clear_ms` | `respeaker_speaker` on `interrupted` frame or `/audio` close | reader compares against `_thinkingSetMs` |
+
+So the mic streams only when: **activation window open AND not speaking AND
+not thinking AND WS connected**.
+
+Tmpfs writes use *write-temp + `rename(2)`* so a reader can never observe a
+half-truncated value mid-write.
+
+### LED ring
+
+12-LED APA102 ring, animated in its own pthread (`src/state_handler.c`); the
+main loop only flips state via `changePixelRingState()` (never writes pixels
+directly — that would race the animation thread).
+
+| State | Trigger | Animation |
+|---|---|---|
+| `ON_IDLE` | nothing happening | single LED breathing, teal, 3 s cycle |
+| `ON_WAKE` | "Alexa" detected | whole-ring cyan breathing pulse, held `WAKE_LED_HOLD_MS` (~1.5 s) |
+| `ON_LISTEN` | Claude thinking | 4-LED comet trail, blue |
+| `ON_SPEAK` | answer audio playing | 12-LED rainbow chase |
+
+Steady-state selection each ~10 ms audio chunk:
+`speakerActive ? ON_SPEAK : (thinking ? ON_LISTEN : ON_IDLE)` — overridden by
+`ON_WAKE` for the hold window right after a wake. No hardcoded LED timers;
+states follow the `speakerActive`/`thinking`/wake signals.
 
 ## Hardware
 
-ReSpeaker Core V2 (ARMv7l 32-bit, Debian 9 + Snips/Alango stack).
-8-mic seeed-8ch array on the input side; 2-channel seeed-2ch sink on the
-output side. Grove speaker on the 3.5 mm jack.
+ReSpeaker Core V2 — **ARMv7l 32-bit**, Debian 9, ~984 MB RAM, **no swap**,
+4 cores, Snips/Alango DSP stack. 8-mic seeed-8ch array in, 2-channel sink out,
+Grove speaker on the 3.5 mm jack.
 
-Memory-relevant quirk: 64-bit writes are NOT atomic on ARMv7. Any
-cross-thread 64-bit field (`std::atomic<long long>`) — torn reads
-otherwise. See `include/ws_transport.hpp::_thinkingSetMs`.
+> **ARMv7 quirk:** 64-bit writes are **not atomic**. Any cross-thread 64-bit
+> field must be `std::atomic<long long>` or you get torn reads. See
+> `include/ws_transport.hpp::_thinkingSetMs`.
 
-## Build prerequisites
+> **No swap, ~1 GB RAM:** build **single-job** (plain `make`, never `-j`) and
+> stop pm2 services before building, or the box OOMs. The Makefile does this.
 
-Done once on the board:
+## Setup
+
+### Build prerequisites (once on the board)
 
 ```sh
 sudo apt-get update && sudo apt-get install -y \
@@ -46,22 +113,50 @@ cmake .. && make -j && sudo make install
 
 `nlohmann/json.hpp` is vendored under `include/`.
 
-## Build / deploy / run
+### Config
 
-Driven by `Makefile`. Run on the board (or from the dev box via
-`ssh respeaker make -C ~/projects/respeaker-websockets <target>`):
+`config.json` (in the repo root, copied into `build/` at build time) holds the
+**LAN address of your dev box**, so it is **gitignored**. Create it from the
+template and point it at your dev-box STT endpoint:
 
 ```sh
-make help               # list targets
+cp config.example.json config.json
+# edit "webSocketAddress" → ws://<your-dev-box-ip>:8766/stt/stream
+```
 
-make build              # cmake → make -j4 (the board's cmake is too old
-                        # for `cmake --build`; we shell out to make directly)
-make restart            # pm2 restart asr + speaker
-make deploy             # build + restart
-make logs               # tail pm2 logs (both procs, raw)
-make status             # pm2 list + tmpfs flag files
-make tmpfs-reset        # manually clear /tmp/respeaker_*_ms files (debug)
-make clean              # wipe build/ and reconfigure cmake
+```jsonc
+{
+  "webSocketAddress": "ws://<DEV_BOX_IP>:8766/stt/stream",
+  "respeaker": {
+    "kwsModelName": "alexa.umdl",   // Snowboy wake-word model under models/
+    "kwsSensitivity": "0.6",        // raise toward 0.65 if "Alexa" under-triggers
+    "listeningTimeout": 8000,
+    "gainLevel": 10,
+    "singleBeamOutput": false,
+    "enableWavLog": false,          // off — wav logging just burdens the CPU
+    "agc": true,
+    "mic0Angle": 0,                 // physical mount angle of mic0 (DOA frame)
+    "triggerConfirmMs": 0           // MB-DoA post-trigger confirm window
+  },
+  "pixelRing": { "ledBrightness": 20, "idleColor": "teal", "listenColor": "blue", "speakColor": "purple", "isMutedOnStart": false },
+  "hardware":  { "ledsAmount": 12, "spiBus": 0, "spiDev": 0, "power": { "gpioPin": 66, "gpioVal": 0 } }
+}
+```
+
+## Build / deploy / run
+
+Driven by `Makefile`. Run on the board, or from the dev box via
+`ssh respeaker make -C ~/projects/respeaker-websockets <target>`:
+
+```sh
+make help          # list targets
+make build         # single-job compile (+ syncs config.json into build/)
+make restart       # pm2 restart asr + speaker
+make deploy        # stop services → build → restart  (safe for the 1 GB box)
+make logs          # tail pm2 logs (both procs)
+make status        # pm2 list + tmpfs flag files
+make tmpfs-reset   # clear /tmp/respeaker_*_ms flags (debug)
+make clean         # wipe build/ and reconfigure cmake
 ```
 
 First-time pm2 registration:
@@ -72,129 +167,65 @@ pm2 start ./build/respeaker_speaker --name speaker --time
 pm2 save
 ```
 
-(`respeaker_speaker` takes optional positional args `ws_url alsa_device`,
-default `ws://192.168.0.95:9100/audio` and `default`.)
+`respeaker_speaker` takes optional positional args `ws_url alsa_device`
+(defaults `ws://127.0.0.1:9000/audio` and `default`) — pm2 passes the real
+dev-box `/audio` URL.
 
-## Configuration
+## Wire protocol
 
-`config.json` in the build dir (auto-copied from repo root by cmake):
+### Board → dev box
 
-```json
-{
-  "webSocketAddress": "ws://192.168.0.95:8766/stt/stream",
-  "respeaker": {
-    "kwsModelName": "snowboy.umdl",
-    "kwsSensitivity": "0.6",
-    "gainLevel": 10,
-    "singleBeamOutput": false,
-    "agc": true
-  },
-  "pixelRing": {
-    "ledBrightness": 20,
-    "idleColor": "teal",
-    "listenColor": "blue",
-    "speakColor": "purple",
-    "isMutedOnStart": false
-  },
-  "hardware": {
-    "ledsAmount": 12,
-    "spiBus": 0, "spiDev": 0,
-    "power": { "gpioPin": 66, "gpioVal": 0 }
-  }
-}
-```
+- **mic → STT `/stt/stream`** (`respeaker_core`): binary PCM16 LE @ 16 kHz
+  mono. Sent only while the activation window is open and not speaking/thinking.
+  STT itself POSTs the transcript to the voice `/prompt` — the board never
+  relays text.
 
-Change `webSocketAddress` to point at your STT server's `/stt/stream`
-endpoint (the dev-box STT process).
+### Dev box → board
 
-## What goes over the wire
-
-### From the board
-
-- **mic → STT WS `/stt/stream`** (`respeaker_core` → dev box)
-  Binary PCM16 LE @ 16 kHz mono. Suppressed while `isSpeakerActive()` or
-  `isThinking()` (half-duplex gate).
-
-### Into the board
-
-- **voice `/audio` WS** (dev-box voice → `respeaker_speaker`)
-  Text JSON `AudioStart{sample_rate, channels, format}` on connect, then
-  binary PCM16 LE frames. One text `{"type":"interrupted"}` on cancel.
-- **STT `/stt/stream` WS events** (dev-box STT → `respeaker_core`)
-  `SttFinal` flips LED to `ON_LISTEN` (Claude thinking); `SttDropped`
-  noted. STT POSTs voice `/prompt` itself — board never relays text.
-
-## Half-duplex contract
-
-```
-mic→WS suppressed while:
-  isSpeakerActive()   /tmp/respeaker_speaking_until_ms > now    (TTS playing)
-  OR isThinking()     _thinkingSetMs set, clear file < set,     (Claude thinking)
-                      AND now − _thinkingSetMs < 30 000 ms      (safety cap)
-```
-
-Three signals:
-
-| Signal | Set by | Cleared by |
-|---|---|---|
-| `_thinkingSetMs` (atomic long long, in-process) | `SttFinal` event in `ws_transport.cpp` | `speakerActive` rising edge (main loop) **OR** clear file > set **OR** > 30 s cap |
-| `/tmp/respeaker_speaking_until_ms` | `respeaker_speaker` on every PCM frame: `max(prev, now) + chunk_ms + 500 ms` | `interrupted` frame or `/audio` close — speaker writes 0 |
-| `/tmp/respeaker_thinking_clear_ms` | `respeaker_speaker` on `interrupted` frame or `/audio` close | n/a — reader compares vs `_thinkingSetMs` |
-
-Tmpfs writes use `write-temp + rename(2)` for atomicity so the reader
-can't observe a half-truncated zero between truncate and fprintf.
-
-## LED state machine
-
-Evaluated each audio chunk (~10 ms) in `respeaker_core`'s main loop:
-
-```
-speakerActive ? ON_SPEAK : (thinking ? ON_LISTEN : ON_IDLE)
-```
-
-| State | Animation | Source |
-|---|---|---|
-| `ON_IDLE` | random single LED breathing, teal, 3 s cycles | `src/animation.c::idle_loop` |
-| `ON_LISTEN` (thinking) | 4-LED comet trail, blue, 70 ms/frame, ~840 ms/cycle | `on_listen_loop` |
-| `ON_SPEAK` | 12-LED HSV rainbow chase, 40 ms/frame, ~2.4 s/cycle | `on_speak_loop` |
-
-No hardcoded timer caps on LED states — they're driven entirely by
-`speakerActive` + `thinking` signals.
+- **voice `/audio`** (→ `respeaker_speaker`): text JSON
+  `AudioStart{sample_rate, channels, format}` on connect, then binary PCM16 LE
+  frames. Text control frames: `{"type":"interrupted"}` (cancel → flush ALSA),
+  `{"type":"hold","until_ms":…}` (mute mic during a tool window),
+  `{"type":"activation","until_ms":…}` (slide the activation window).
+- **STT `/stt/stream` events** (→ `respeaker_core`): `SttFinal` flips the LED
+  to `ON_LISTEN` (Claude thinking); `SttDropped` noted.
 
 ## File layout
 
 ```
 include/
-  ws_transport.hpp       STT WS client + LED gate signals
-  config.hpp, ...
+  ws_transport.hpp     STT WS client; isThinking / isSpeakerActive / activeUntilMs
+  common.h             STATE enum (idle/listen/speak/wake/...), config keys
+  animation.h, pixel_ring.hpp, config.hpp, ...
 src/
-  main.cpp               respeaker_core: librespeaker chain + LED main loop
-  speaker_main.cpp       respeaker_speaker: /audio WS subscriber + ALSA
-  ws_transport.cpp       STT event parsing, isThinking, isSpeakerActive
-  animation.c            LED animations (idle / listen / speak / mute)
-  config.cpp, respeaker_core.cpp
-  pixel_ring/, hotword/, ...
-build/                    (gitignored; cmake output, runtime config.json)
-docs/STT_INTEGRATION_PLAN.md
-Makefile                  build / restart / deploy / logs / status
-CMakeLists.txt            two targets: respeaker_core + respeaker_speaker
-config.json               source of truth for KWS sensitivity, GPIO, LED palette
+  main.cpp             respeaker_core: librespeaker chain, wake gate, LED main loop
+  speaker_main.cpp     respeaker_speaker: /audio subscriber, ALSA, tmpfs flags
+  ws_transport.cpp     STT event parsing + half-duplex / activation signals
+  animation.c          LED animations (idle / wake / listen / speak / mute)
+  state_handler.c      animation-thread state machine
+  config.cpp, respeaker_core.cpp, cAPA102.c, gpio_rw.c, verbose.c
+models/                Snowboy wake-word models (alexa.umdl)
+config.example.json    template → copy to config.json (gitignored) and edit
+config.json            live config with your dev-box address (gitignored)
+Makefile               build / restart / deploy / logs / status
+CMakeLists.txt         two targets: respeaker_core + respeaker_speaker
 ```
 
-## Common operations
+## Troubleshooting
 
 ```sh
-make status                       # pm2 list + tmpfs files (debug peek)
-make tmpfs-reset                  # clear both half-duplex flags
-pm2 logs asr     --raw            # board ASR + LED loop output
-pm2 logs speaker --raw            # board /audio subscriber
-ls -la /tmp/respeaker_*_ms        # half-duplex tmpfs flags
+make status                  # pm2 + tmpfs flags at a glance
+make tmpfs-reset             # clear half-duplex / activation flags by hand
+pm2 logs asr     --raw       # mic chain + wake + LED loop
+pm2 logs speaker --raw       # /audio subscriber + ALSA
+ls -la /tmp/respeaker_*_ms   # speaking / thinking-clear / active-until flags
 ```
 
-When the LED is stuck in `ON_LISTEN` (thinking) and the kid mic feels
-muted: 30 s safety cap clears it. If sooner, `make tmpfs-reset` does it
-by hand. Root cause is usually that voice 409'd a `/prompt` without
-producing playback — see issue tracking in the server repo.
+- **LED stuck in `ON_LISTEN`, mic feels dead:** a turn started thinking but no
+  audio played. The 30 s cap self-clears it; `make tmpfs-reset` does it now.
+- **"Alexa" under-/over-triggers:** tune `kwsSensitivity` (0.5–0.65).
+- **Board won't reach the server:** the dev-box STT must bind `0.0.0.0`
+  (default `127.0.0.1` is unreachable from the board); check `webSocketAddress`.
 
 ## License
 

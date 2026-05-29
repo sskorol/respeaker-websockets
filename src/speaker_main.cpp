@@ -37,7 +37,7 @@ using namespace std::chrono_literals;
 
 namespace
 {
-constexpr const char *kDefaultWsUrl = "ws://192.168.0.95:9000/audio";
+constexpr const char *kDefaultWsUrl = "ws://127.0.0.1:9000/audio";
 constexpr const char *kDefaultPcmDevice = "default";
 // Cross-process flag (UTC epoch ms deadline) read by the ASR pipeline (`ws_transport.cpp`)
 // to suppress /prompt POSTs while the Grove speaker is playing TTS — guards against the
