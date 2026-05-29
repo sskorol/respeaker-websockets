@@ -234,36 +234,44 @@ void *on_disabled()
     return ((void *)"ON_DISABLED");
 }
 
-// 6 — Wake acknowledgment: non-directional cyan breathing pulse on the whole ring
-// (Echo-Dot "I'm listening" look). DOA on this 6-mic board flat on a table is too noisy
-// to point reliably, so we claim no direction. main.cpp holds ON_WAKE ~1.5 s, then the
-// steady LED logic transitions out and ends this.
+// 6 — Wake acknowledgment: ONE slow, dim cyan breath over the whole ring (gentle
+// "I'm listening" glow, kid-safe — no strobing). DOA on this 6-mic board flat on a
+// table is too noisy to point reliably, so we claim no direction. main.cpp holds
+// ON_WAKE ~1.5 s; we pace a single rise+fall to roughly fill that window instead of
+// looping a fast bright pulse (which flickered ~1.6 Hz at full brightness and hurt
+// young eyes). Peak brightness is capped low and the fade uses fine steps for smoothness.
 void *on_wake()
 {
     const uint32_t WAKE_C = 0x00CCFF; // Alexa-cyan
+    // Fine-grained, slow, dim: a single breath ≈ WAKE_LED_HOLD_MS so it never repeats.
+    const int WAKE_STEPS = 48;        // smoothness (vs STEP_COUNT=20 hard ramp)
+    const int WAKE_STEP_MS = 14;      // 48*14 ≈ 670 ms each way → ~1.34 s one breath
     verbose(VVV_DEBUG, stdout, PURPLE "[%s]" NONE " animation started", __FUNCTION__);
     RUNTIME.if_update = 0;
     cAPA102_Clear_All();
 
     uint8_t leds = RUNTIME.LEDs.number;
-    uint8_t bri = RUNTIME.max_brightness;
+    // Cap the peak well below max — a soft glow, not a flash. Floor at 1 so it stays visible.
+    uint8_t peak = RUNTIME.max_brightness / 3;
+    if (peak < 1)
+        peak = 1;
     while (RUNTIME.curr_state == ON_WAKE)
     {
-        for (int s = 1; s <= STEP_COUNT && RUNTIME.curr_state == ON_WAKE; s++)
+        for (int s = 1; s <= WAKE_STEPS && RUNTIME.curr_state == ON_WAKE; s++)
         {
-            uint8_t lvl = (uint8_t)(bri * s / STEP_COUNT);
+            uint8_t lvl = (uint8_t)(peak * s / WAKE_STEPS);
             for (uint8_t i = 0; i < leds; i++)
                 cAPA102_Set_Pixel_4byte(i, remap_4byte(WAKE_C, lvl));
             cAPA102_Refresh();
-            delay_on_state(15, ON_WAKE);
+            delay_on_state(WAKE_STEP_MS, ON_WAKE);
         }
-        for (int s = STEP_COUNT; s >= 0 && RUNTIME.curr_state == ON_WAKE; s--)
+        for (int s = WAKE_STEPS; s >= 0 && RUNTIME.curr_state == ON_WAKE; s--)
         {
-            uint8_t lvl = (uint8_t)(bri * s / STEP_COUNT);
+            uint8_t lvl = (uint8_t)(peak * s / WAKE_STEPS);
             for (uint8_t i = 0; i < leds; i++)
                 cAPA102_Set_Pixel_4byte(i, remap_4byte(WAKE_C, lvl));
             cAPA102_Refresh();
-            delay_on_state(15, ON_WAKE);
+            delay_on_state(WAKE_STEP_MS, ON_WAKE);
         }
     }
     cAPA102_Clear_All();
