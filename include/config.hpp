@@ -28,6 +28,8 @@ public:
   bool doAGC();
   bool doWaveLog();
   bool isSingleBeamOutput();
+  int mic0Angle();
+  int triggerConfirmMs();
 
   // Pixel Ring
   string hardwareModelName();

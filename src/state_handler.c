@@ -10,7 +10,8 @@ static void *(*state_functions[STATE_NUM])() = {
     on_speak,
     to_mute,
     to_unmute,
-    on_disabled};
+    on_disabled,
+    on_wake};
 
 void state_machine_update(void)
 {

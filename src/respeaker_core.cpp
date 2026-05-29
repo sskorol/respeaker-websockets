@@ -14,10 +14,18 @@ RespeakerCore::RespeakerCore(Config* config)
   // ref_in. With ref=6 the speaker leak survives in out_6 at ~24% energy → STT self-loop.
   // With ref=7 the post-AEC beamformed output drops to ~0.2% energy → AEC actually suppresses.
   beamformingNode.reset(VepAecBeamformingNode::Create(CIRCULAR_6MIC_7BEAM, config->isSingleBeamOutput(), 7, config->doWaveLog()));
+  // Rotate the DOA frame so 0° matches the board's physical orientation (mic0's mounting
+  // angle). Without this the reported direction is offset by a constant. Circular array only.
+  beamformingNode->SetAngleForMic0(config->mic0Angle());
   hotwordNode.reset(SnowboyMbDoaKwsNode::Create(kwsResourcesPath, kwsModelPath, config->kwsSensitivityLevel(), 10, config->doAGC()));
-  
+
   if (config->doAGC()) {
     hotwordNode->SetAgcTargetLevelDbfs(config->gainLevel());
+  }
+  // Longer trigger-post-confirm window = the MB-DOA node collects more beams' triggers
+  // before scoring the target beam → stabler direction, fewer wild 90°+ misses. 0 = lib default.
+  if (config->triggerConfirmMs() > 0) {
+    hotwordNode->SetTriggerPostConfirmThresholdTime(config->triggerConfirmMs());
   }
   hotwordNode->DisableAutoStateTransfer();
 

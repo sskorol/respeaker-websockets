@@ -17,4 +17,6 @@ void *to_unmute(void);
 
 void *on_disabled(void);
 
+void *on_wake(void);
+
 #endif

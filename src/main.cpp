@@ -1,5 +1,19 @@
 #include "main.hpp"
 
+// Wake-word activation window. Saying "Alexa" opens it locally so the command right
+// after the keyword streams immediately (no wait for the server round-trip). The voice
+// server slides it forward on every accepted turn via /tmp/respeaker_active_until_ms
+// (written by respeaker_speaker on an `activation` frame). 1 min, matches VOICE_ACTIVATION_TTL_S.
+#define ACTIVE_WINDOW_MS (1 * 60 * 1000LL)
+// How long the wake/DOA animation holds before the steady LED logic resumes.
+#define WAKE_LED_HOLD_MS 1500LL
+
+static long long nowEpochMs()
+{
+  using namespace std::chrono;
+  return duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
+}
+
 void enablePixelRing(Config* config)
 {
   setupPixelRing(config);
@@ -79,24 +93,31 @@ int main(int argc, char *argv[])
     verbose(VV_INFO, stdout, "Press CTRL-C to exit");
   }
 
-  int wakeWordIndex = 0, direction = 0;
+  int wakeWordIndex = 0;
   TimePoint detectTime;
   string audioChunk;
   STATE prevLedState = ON_IDLE;
+  long long wakeDeadlineMs = 0;   // local activation bootstrap (set on "Alexa")
+  long long wakeLedUntilMs = 0;   // hold the wake/DOA animation until this time
 
   while (!shouldStopListening && trackPixelRingState())
   {
     audioChunk = respeakerCore->processAudio(wakeWordIndex);
+    long long now_ms = nowEpochMs();
 
     if (wakeWordIndex >= 1)
     {
       isWakeWordDetected = true;
       wsClient->isTranscribed(false);
       detectTime = SteadyClock::now();
-      direction = respeakerCore->soundDirection();
-      verbose(VV_INFO, stdout, "Wake word is detected, direction = %d.", direction);
-      changePixelRingState(TO_UNMUTE);
-      prevLedState = TO_UNMUTE;
+      // Open the activation window locally so the command after "Alexa" streams now.
+      wakeDeadlineMs = now_ms + ACTIVE_WINDOW_MS;
+      verbose(VV_INFO, stdout, "Wake word is detected, direction = %d.",
+              respeakerCore->soundDirection());
+      // Echo-Dot-style wake+DOA animation; hold it briefly before steady LED resumes.
+      changePixelRingState(ON_WAKE);
+      prevLedState = ON_WAKE;
+      wakeLedUntilMs = now_ms + WAKE_LED_HOLD_MS;
     }
 
     // Three-state LED feedback driven by half-duplex signals:
@@ -109,19 +130,26 @@ int main(int argc, char *argv[])
     bool speakerActive = WsTransport::isSpeakerActive();
     if (speakerActive) wsClient->clearThinking();
     bool thinking = wsClient->isThinking();
-    STATE targetLed = speakerActive ? ON_SPEAK : (thinking ? ON_LISTEN : ON_IDLE);
-    if (targetLed != prevLedState)
+    // Hold the wake/DOA animation for its window; don't let the steady logic yank it away.
+    if (now_ms >= wakeLedUntilMs)
     {
-      changePixelRingState(targetLed);
-      prevLedState = targetLed;
+      STATE targetLed = speakerActive ? ON_SPEAK : (thinking ? ON_LISTEN : ON_IDLE);
+      if (targetLed != prevLedState)
+      {
+        changePixelRingState(targetLed);
+        prevLedState = targetLed;
+      }
     }
 
-    // Full half-duplex window: suppress mic→STT both while the Grove speaker is
-    // playing TTS AND while Claude is thinking (between SttFinal and TTS first byte).
-    // Voice already 409-rejects mid-turn prompts; this just saves bandwidth + STT
-    // compute and prevents stale audio from sitting in STT's LISTENING buf across
-    // the thinking gap.
-    if (wakeWordIndex < 1 && wsClient->isConnected() && !speakerActive && !thinking)
+    // Wake-gated half-duplex window: stream mic→STT only while the activation window is
+    // open (now < local wake deadline OR the server-pushed deadline), AND the speaker is
+    // idle and Claude isn't thinking. When inactive the mic is fully off — no STT, no GPU,
+    // no spurious replies, AEC stays quiet between sessions. Say "Alexa" to re-open.
+    long long activeUntilMs = wakeDeadlineMs;
+    long long serverUntilMs = WsTransport::activeUntilMs();
+    if (serverUntilMs > activeUntilMs) activeUntilMs = serverUntilMs;
+    bool active = now_ms < activeUntilMs;
+    if (wakeWordIndex < 1 && active && wsClient->isConnected() && !speakerActive && !thinking)
     {
       wsClient->send(audioChunk);
     }

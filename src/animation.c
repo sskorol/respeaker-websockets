@@ -233,3 +233,40 @@ void *on_disabled()
     cAPA102_Clear_All();
     return ((void *)"ON_DISABLED");
 }
+
+// 6 — Wake acknowledgment: non-directional cyan breathing pulse on the whole ring
+// (Echo-Dot "I'm listening" look). DOA on this 6-mic board flat on a table is too noisy
+// to point reliably, so we claim no direction. main.cpp holds ON_WAKE ~1.5 s, then the
+// steady LED logic transitions out and ends this.
+void *on_wake()
+{
+    const uint32_t WAKE_C = 0x00CCFF; // Alexa-cyan
+    verbose(VVV_DEBUG, stdout, PURPLE "[%s]" NONE " animation started", __FUNCTION__);
+    RUNTIME.if_update = 0;
+    cAPA102_Clear_All();
+
+    uint8_t leds = RUNTIME.LEDs.number;
+    uint8_t bri = RUNTIME.max_brightness;
+    while (RUNTIME.curr_state == ON_WAKE)
+    {
+        for (int s = 1; s <= STEP_COUNT && RUNTIME.curr_state == ON_WAKE; s++)
+        {
+            uint8_t lvl = (uint8_t)(bri * s / STEP_COUNT);
+            for (uint8_t i = 0; i < leds; i++)
+                cAPA102_Set_Pixel_4byte(i, remap_4byte(WAKE_C, lvl));
+            cAPA102_Refresh();
+            delay_on_state(15, ON_WAKE);
+        }
+        for (int s = STEP_COUNT; s >= 0 && RUNTIME.curr_state == ON_WAKE; s--)
+        {
+            uint8_t lvl = (uint8_t)(bri * s / STEP_COUNT);
+            for (uint8_t i = 0; i < leds; i++)
+                cAPA102_Set_Pixel_4byte(i, remap_4byte(WAKE_C, lvl));
+            cAPA102_Refresh();
+            delay_on_state(15, ON_WAKE);
+        }
+    }
+    cAPA102_Clear_All();
+    cAPA102_Refresh();
+    return ((void *)"ON_WAKE");
+}

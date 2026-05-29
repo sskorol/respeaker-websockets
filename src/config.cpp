@@ -48,6 +48,17 @@ bool Config::isSingleBeamOutput()
   return data[C_RESPEAKER_STR][RSP_SINGLE_BEAM_OUTPUT_STR];
 }
 
+// Optional (default if absent): .value() avoids the throw that data[][] does on a missing key.
+int Config::mic0Angle()
+{
+  return data[C_RESPEAKER_STR].value(RSP_MIC0_ANGLE_STR, 0);
+}
+
+int Config::triggerConfirmMs()
+{
+  return data[C_RESPEAKER_STR].value(RSP_TRIGGER_CONFIRM_STR, 0);
+}
+
 // Pixel Ring Config
 string Config::hardwareModelName()
 {

@@ -60,7 +60,7 @@ RUNTIME_OPTIONS RUNTIME = {
     1,
     0,
     /* Animation Enable */
-    {1, 1, 1, 1, 1, 1},
+    {1, 1, 1, 1, 1, 1, 1},
     /* Mute*/
     0};
 

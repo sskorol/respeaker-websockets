@@ -60,6 +60,12 @@ public:
   // playing TTS — eliminates hardware-AEC convergence leak + Whisper self-echo entirely.
   static bool isSpeakerActive();
 
+  // Wake-word activation deadline pushed by the voice server. Reads the UTC epoch-ms
+  // value respeaker_speaker writes to /tmp/respeaker_active_until_ms on an `activation`
+  // text frame. The mic→WS gate in main.cpp streams only while now < this (or the local
+  // wake bootstrap). 0 = none. Each accepted dialog turn slides it forward (15-min TTL).
+  static long long activeUntilMs();
+
   // "Claude is thinking" LED feedback gate. True while a `final` transcript was just
   // received and TTS hasn't started yet. Hard-capped at THINKING_MAX_AGE_MS as a safety
   // net so a rejected /prompt (no playback, no `interrupted` frame) can't leave the

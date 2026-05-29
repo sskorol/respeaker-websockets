@@ -8,6 +8,7 @@ namespace
 {
 constexpr const char *kSpeakingUntilFile = "/tmp/respeaker_speaking_until_ms";
 constexpr const char *kThinkingClearFile = "/tmp/respeaker_thinking_clear_ms";
+constexpr const char *kActiveUntilFile = "/tmp/respeaker_active_until_ms";
 
 long long readEpochMsFile(const char *path)
 {
@@ -146,4 +147,8 @@ bool WsTransport::isSpeakerActive() {
                          system_clock::now().time_since_epoch())
                          .count();
   return now_ms < deadline_ms;
+}
+
+long long WsTransport::activeUntilMs() {
+  return readEpochMsFile(kActiveUntilFile);
 }

@@ -11,13 +11,14 @@
 #include <time.h>
 #include <unistd.h>
 
-#define STATE_NUM 6
+#define STATE_NUM 7
 #define ON_IDLE_STR "on_idle"
 #define ON_LISTEN_STR "on_listen"
 #define ON_SPEAK_STR "on_speak"
 #define TO_MUTE_STR "to_mute"
 #define TO_UNMUTE_STR "to_unmute"
 #define ON_DISABLED_STR "on_disabled"
+#define ON_WAKE_STR "on_wake"
 
 typedef enum
 {
@@ -26,7 +27,8 @@ typedef enum
     ON_SPEAK,
     TO_MUTE,
     TO_UNMUTE,
-    ON_DISABLED
+    ON_DISABLED,
+    ON_WAKE
 } STATE;
 
 #define C_WS_ADDRESS_STR "webSocketAddress"
@@ -42,6 +44,12 @@ typedef enum
 #define RSP_SINGLE_BEAM_OUTPUT_STR "singleBeamOutput"
 #define RSP_WAV_LOG_STR "enableWavLog"
 #define RSP_AGC_STR "agc"
+// DOA tuning. mic0Angle: physical mounting angle (deg) of mic0 — rotates the whole DOA
+// frame to match the board's orientation (VepAecBeamformingNode::SetAngleForMic0).
+// triggerConfirmMs: window the MB-DOA node waits collecting beam triggers before scoring
+// the target beam (SetTriggerPostConfirmThresholdTime) — larger = stabler, less jitter.
+#define RSP_MIC0_ANGLE_STR "mic0Angle"
+#define RSP_TRIGGER_CONFIRM_STR "triggerConfirmMs"
 
 #define HW_POWER_STR "power"
 #define HW_LED_NUM "ledsAmount"

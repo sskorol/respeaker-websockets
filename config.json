@@ -1,13 +1,15 @@
 {
   "webSocketAddress": "ws://192.168.0.95:8766/stt/stream",
   "respeaker": {
-    "kwsModelName": "snowboy.umdl",
+    "kwsModelName": "alexa.umdl",
     "kwsSensitivity": "0.6",
     "listeningTimeout": 8000,
     "gainLevel": 10,
     "singleBeamOutput": false,
-    "enableWavLog": true,
-    "agc": true
+    "enableWavLog": false,
+    "agc": true,
+    "mic0Angle": 0,
+    "triggerConfirmMs": 0
   },
   "pixelRing": {
     "ledBrightness": 20,

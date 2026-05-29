@@ -120,6 +120,8 @@ void setupPixelRing(Config* config)
   RUNTIME.animation_enable[ON_SPEAK] = config->isSpeakAnimationEnabled();
   RUNTIME.animation_enable[TO_MUTE] = config->isMuteAnimationEnabled();
   RUNTIME.animation_enable[TO_UNMUTE] = config->isUnmuteAnimationEnabled();
+  // Wake/DOA animation has no JSON toggle — always on (it's the only "Alexa heard you" cue).
+  RUNTIME.animation_enable[ON_WAKE] = 1;
   RUNTIME.if_mute = config->shouldMute();
   RUNTIME.LEDs.number = config->ledsAmount();
   RUNTIME.LEDs.spi_bus = config->spiBusNumber();

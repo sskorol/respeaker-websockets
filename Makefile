@@ -2,17 +2,21 @@
 # Run on the board (or `ssh respeaker make -C ~/projects/respeaker-websockets <target>`).
 #
 # Common recipes:
-#   make build      # cmake --build (uses make -j4 since on-board cmake is old)
-#   make deploy     # build + restart
+#   make build      # single-job compile (+ syncs config.json into build/)
+#   make deploy     # stop -> build -> restart (stop-first; safe on 1GB no-swap)
 #   make restart    # pm2 restart asr + speaker
 #   make logs       # tail pm2 logs (both procs, raw)
 #   make status     # pm2 list + tmpfs flag files
 #   make clean      # wipe build/, reconfigure cmake
 #
 # Hard rules:
-#   - Board's cmake is too old for `cmake --build .`; use `make -j4` directly.
-#   - tmpfs flags (/tmp/respeaker_speaking_until_ms, /tmp/respeaker_thinking_clear_ms)
-#     are the half-duplex contract; status target prints them.
+#   - Board's cmake is too old for `cmake --build .`; use `make` directly.
+#   - 1GB RAM, NO swap: compile SINGLE-JOB (never -j). Parallel cc1plus on json.hpp/
+#     ixwebsocket OOM-kills the live pm2 services. deploy stops services first.
+#   - `make build` syncs root config.json -> build/config.json (plain `make` skips the
+#     cmake file(COPY), which only runs at configure time).
+#   - tmpfs flags (speaking_until / thinking_clear / active_until) are the half-duplex +
+#     wake-activation contract; status target prints them.
 
 SHELL := /usr/bin/env bash
 .SHELLFLAGS := -eu -o pipefail -c
@@ -25,8 +29,9 @@ BUILD_DIR := $(ROOT)/build
 ASR_SVC     ?= asr
 SPEAKER_SVC ?= speaker
 
-TMPFS_SPEAK := /tmp/respeaker_speaking_until_ms
-TMPFS_THINK := /tmp/respeaker_thinking_clear_ms
+TMPFS_SPEAK  := /tmp/respeaker_speaking_until_ms
+TMPFS_THINK  := /tmp/respeaker_thinking_clear_ms
+TMPFS_ACTIVE := /tmp/respeaker_active_until_ms
 
 .PHONY: help
 help:
@@ -38,16 +43,19 @@ configure:  ## (Re)run cmake in build/
 	@cd $(BUILD_DIR) && cmake .. 2>&1 | tail -10
 
 .PHONY: build
-build:  ## Compile respeaker_core + respeaker_speaker (make -j4)
+build:  ## Compile respeaker_core + respeaker_speaker (SINGLE-JOB; syncs config.json)
 	@test -d $(BUILD_DIR) || $(MAKE) -s configure
-	@cd $(BUILD_DIR) && make -j4 2>&1 | tail -15
+	@cp -f $(ROOT)/config.json $(BUILD_DIR)/config.json
+	@cd $(BUILD_DIR) && make 2>&1 | tail -15
 
 .PHONY: restart
 restart:  ## pm2 restart asr + speaker
 	@pm2 restart $(ASR_SVC) $(SPEAKER_SVC) 2>&1 | tail -5
 
+# stop-first: services down during compile so a cc1plus spike can't OOM the live procs
+# on this 1GB no-swap board. Prereqs run in order (serial make) → stop, build, restart.
 .PHONY: deploy
-deploy: build restart  ## Build + restart pm2 services
+deploy: stop build restart  ## Stop -> build (single-job) -> restart
 	@echo "[board] deployed"
 
 .PHONY: start
@@ -74,7 +82,7 @@ logs-speaker:  ## Tail speaker only
 status:  ## pm2 list + half-duplex tmpfs flag files
 	@pm2 list 2>&1 | grep -E '$(ASR_SVC)|$(SPEAKER_SVC)' || echo "(services not in pm2 list)"
 	@echo "--- tmpfs (epoch ms; 0 = idle) ---"
-	@for f in $(TMPFS_SPEAK) $(TMPFS_THINK); do \
+	@for f in $(TMPFS_SPEAK) $(TMPFS_THINK) $(TMPFS_ACTIVE); do \
 	  printf '%s = ' "$$f"; cat "$$f" 2>/dev/null || echo MISSING; \
 	done
 

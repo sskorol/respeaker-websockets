@@ -48,6 +48,10 @@ constexpr const char *kSpeakingUntilFile = "/tmp/respeaker_speaking_until_ms";
 // watchdog fired. respeaker_core compares against its in-process thinking-set
 // timestamp to drop the "thinking" LED state without needing a hardcoded cap.
 constexpr const char *kThinkingClearFile = "/tmp/respeaker_thinking_clear_ms";
+// Cross-process flag (UTC epoch ms deadline) for the wake-word activation window. Voice
+// pushes it on every accepted turn via an `activation` text frame; respeaker_core reads it
+// (ws_transport.cpp) to keep the mic→STT stream open. Lapses 15 min after the last dialog.
+constexpr const char *kActiveUntilFile = "/tmp/respeaker_active_until_ms";
 // Just covers ALSA ring buffer drain + a touch of reverb. Self-loop is double-guarded
 // by the voice server's /prompt 409-while-turn-in-progress reject and Whisper's uk-only
 // language constraint, so we can be generous about reopening the mic right after Claude
@@ -356,6 +360,15 @@ void handleTextFrame(AlsaSink &sink, const std::string &payload)
         holdUntilMs.store(0);
         writeSpeakingUntil(0);
         writeThinkingClear(nowEpochMs());
+    }
+    else if (type == "activation")
+    {
+        // Voice slid the wake-word window forward (accepted dialog turn). Persist the new
+        // deadline so respeaker_core keeps streaming the mic until then. 0 = clear/expire.
+        int64_t until_ms = msg.value("until_ms", static_cast<int64_t>(0));
+        writeEpochMsAtomic(kActiveUntilFile, until_ms);
+        verbose(VV_INFO, stdout, "Activation window until epoch ms=%lld",
+                static_cast<long long>(until_ms));
     }
     else
     {
