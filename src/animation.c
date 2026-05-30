@@ -25,6 +25,21 @@ static void delay_on_state(int ms, int state)
         usleep(1000);
 }
 
+// Quiet hours: keep the idle ring fully dark so it doesn't glow in a dark bedroom.
+// Board local clock (Europe/Kyiv ≈ Cluj offset). Only gates ON_IDLE — wake, listen and
+// speak still light up, so a kid who says "Alexa" at night still gets visual feedback.
+#define NIGHT_START_HOUR 21
+#define NIGHT_END_HOUR 7
+static int is_night(void)
+{
+    time_t t = time(NULL);
+    struct tm lt;
+    localtime_r(&t, &lt);
+    if (NIGHT_START_HOUR > NIGHT_END_HOUR) // window spans midnight
+        return lt.tm_hour >= NIGHT_START_HOUR || lt.tm_hour < NIGHT_END_HOUR;
+    return lt.tm_hour >= NIGHT_START_HOUR && lt.tm_hour < NIGHT_END_HOUR;
+}
+
 // 0
 void *on_idle()
 {
@@ -38,6 +53,13 @@ void *on_idle()
     step = RUNTIME.max_brightness / STEP_COUNT;
     while (RUNTIME.curr_state == ON_IDLE)
     {
+        if (is_night())
+        {
+            cAPA102_Clear_All();
+            cAPA102_Refresh();
+            delay_on_state(5000, ON_IDLE); // poll for state change / morning every 5 s
+            continue;
+        }
         delay_on_state(2000, ON_IDLE);
         cAPA102_Clear_All();
         led = rand() % RUNTIME.LEDs.number;

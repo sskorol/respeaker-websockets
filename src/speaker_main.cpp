@@ -52,6 +52,12 @@ constexpr const char *kThinkingClearFile = "/tmp/respeaker_thinking_clear_ms";
 // pushes it on every accepted turn via an `activation` text frame; respeaker_core reads it
 // (ws_transport.cpp) to keep the mic→STT stream open. Lapses 15 min after the last dialog.
 constexpr const char *kActiveUntilFile = "/tmp/respeaker_active_until_ms";
+// Cross-process HARD mic-gate (UTC epoch ms deadline) for the whole turn. Voice holds it
+// wide from turn start (THINKING + SPEAKING) and releases it (0) at turn end. Unlike the
+// rolling per-chunk speaking_until cursor it has no inter-chunk gaps, so respeaker_core
+// never reopens the mic mid-turn → STT never captures a stray/echo utterance that would
+// be answered a turn late.
+constexpr const char *kBusyUntilFile = "/tmp/respeaker_busy_until_ms";
 // Just covers ALSA ring buffer drain + a touch of reverb. Self-loop is double-guarded
 // by the voice server's /prompt 409-while-turn-in-progress reject and Whisper's uk-only
 // language constraint, so we can be generous about reopening the mic right after Claude
@@ -78,6 +84,11 @@ std::atomic<int64_t> holdUntilMs{0};
 // kid mic forever. 30 s comfortably covers WebSearch/WebFetch round-trips;
 // past that the next /prompt watchdog cycle has already kicked in.
 constexpr int64_t kMaxHoldMs = 30000;
+
+// Upper clamp on the turn-busy gate. Voice's turn watchdog cancels at ~60 s and then
+// broadcasts `interrupted` (clears busy), so 90 s is a safe ceiling that still bounds a
+// hostile/buggy payload from muting the kid mic indefinitely.
+constexpr int64_t kMaxBusyMs = 90000;
 
 int64_t nowEpochMs()
 {
@@ -120,6 +131,13 @@ void writeSpeakingUntil(int64_t deadline_ms)
 void writeThinkingClear(int64_t now_ms)
 {
     writeEpochMsAtomic(kThinkingClearFile, now_ms);
+}
+
+// Persist the hard turn-busy deadline (UTC epoch ms; 0 = released) so respeaker_core can
+// keep the mic→STT stream + wake word fully gated for the whole turn without gaps.
+void writeBusyUntil(int64_t deadline_ms)
+{
+    writeEpochMsAtomic(kBusyUntilFile, deadline_ms);
 }
 
 void handleSignal(int sig)
@@ -329,6 +347,7 @@ void handleTextFrame(AlsaSink &sink, const std::string &payload)
         playbackUntilMs.store(0);
         holdUntilMs.store(0);
         writeSpeakingUntil(0);
+        writeBusyUntil(0);
         writeThinkingClear(nowEpochMs());
     }
     else if (type == "hold")
@@ -352,6 +371,17 @@ void handleTextFrame(AlsaSink &sink, const std::string &payload)
         verbose(VV_INFO, stdout, "Tool hold until epoch ms=%lld (effective=%lld)",
                 static_cast<long long>(clamped), static_cast<long long>(effective));
     }
+    else if (type == "busy")
+    {
+        // Voice's hard turn-gate. Held wide from turn start (THINKING + SPEAKING),
+        // released (0) at turn end. Clamp the upper bound so a malformed/hostile payload
+        // can't mute the kid mic forever; allow 0 through verbatim to release immediately.
+        int64_t until_ms = msg.value("until_ms", static_cast<int64_t>(0));
+        int64_t clamped = until_ms <= 0 ? 0 : std::min(until_ms, nowEpochMs() + kMaxBusyMs);
+        writeBusyUntil(clamped);
+        verbose(VV_INFO, stdout, "Turn busy until epoch ms=%lld",
+                static_cast<long long>(clamped));
+    }
     else if (type == "interrupted")
     {
         verbose(VV_INFO, stdout, "Interrupt received; dropping ALSA buffer");
@@ -359,6 +389,7 @@ void handleTextFrame(AlsaSink &sink, const std::string &payload)
         playbackUntilMs.store(0);
         holdUntilMs.store(0);
         writeSpeakingUntil(0);
+        writeBusyUntil(0);
         writeThinkingClear(nowEpochMs());
     }
     else if (type == "activation")

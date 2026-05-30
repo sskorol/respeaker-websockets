@@ -50,6 +50,10 @@ public:
   bool connect(string wsAddress);
   void disconnect();
   void send(string audioChunk);
+  // Send a JSON control frame to the STT WS (e.g. {"type":"end"}). Used to force-flush
+  // STT's utterance buffer the instant the mic gate closes, so a partial captured just
+  // before a turn can't bleed into the next turn's transcript.
+  void sendText(const string &text);
   bool isConnected();
   bool isTranscribeReceived();
   void isTranscribed(bool state);
@@ -65,6 +69,11 @@ public:
   // text frame. The mic→WS gate in main.cpp streams only while now < this (or the local
   // wake bootstrap). 0 = none. Each accepted dialog turn slides it forward (15-min TTL).
   static long long activeUntilMs();
+
+  // Hard turn-busy gate (/tmp/respeaker_busy_until_ms). True for the WHOLE turn while
+  // voice holds the deadline (THINKING + SPEAKING). Single gapless signal the mic→WS
+  // loop and the wake handler use to stay muted across the turn — no per-chunk leak.
+  static bool isBusy();
 
   // "Claude is thinking" LED feedback gate. True while a `final` transcript was just
   // received and TTS hasn't started yet. Hard-capped at THINKING_MAX_AGE_MS as a safety

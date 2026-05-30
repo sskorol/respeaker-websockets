@@ -9,6 +9,7 @@ namespace
 constexpr const char *kSpeakingUntilFile = "/tmp/respeaker_speaking_until_ms";
 constexpr const char *kThinkingClearFile = "/tmp/respeaker_thinking_clear_ms";
 constexpr const char *kActiveUntilFile = "/tmp/respeaker_active_until_ms";
+constexpr const char *kBusyUntilFile = "/tmp/respeaker_busy_until_ms";
 
 long long readEpochMsFile(const char *path)
 {
@@ -103,6 +104,13 @@ void WsTransport::send(string audioChunk)
   client.sendBinary(audioChunk);
 }
 
+void WsTransport::sendText(const string &text)
+{
+  if (_isConnected) {
+    client.sendText(text);
+  }
+}
+
 bool WsTransport::isConnected() {
   return _isConnected;
 }
@@ -151,4 +159,16 @@ bool WsTransport::isSpeakerActive() {
 
 long long WsTransport::activeUntilMs() {
   return readEpochMsFile(kActiveUntilFile);
+}
+
+// Hard turn-busy gate: true for the whole turn (THINKING + SPEAKING) while voice holds
+// the deadline. Single authoritative signal — no inter-chunk gaps like speaking_until.
+bool WsTransport::isBusy() {
+  long long deadline_ms = readEpochMsFile(kBusyUntilFile);
+  if (deadline_ms <= 0) return false;
+  using namespace std::chrono;
+  long long now_ms = duration_cast<milliseconds>(
+                         system_clock::now().time_since_epoch())
+                         .count();
+  return now_ms < deadline_ms;
 }
