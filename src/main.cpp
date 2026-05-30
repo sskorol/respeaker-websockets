@@ -100,6 +100,7 @@ int main(int argc, char *argv[])
   long long wakeDeadlineMs = 0;   // local activation bootstrap (set on "Alexa")
   long long wakeLedUntilMs = 0;   // hold the wake/DOA animation until this time
   bool prevStreaming = false;     // edge-detect mic streaming to force-flush STT on close
+  bool prevTurnGate = false;      // edge-detect turn end to reopen the listening window
 
   while (!shouldStopListening && trackPixelRingState())
   {
@@ -127,6 +128,18 @@ int main(int argc, char *argv[])
     // mic→STT streams and the wake word re-arms ONLY when this is false — i.e. only during
     // LISTENING, the kid's turn. Random speech in any other state is never streamed.
     bool turnGate = speakerActive || thinking || busy;
+
+    // Turn just ENDED (playback fully drained: speakerActive + thinking + busy all clear).
+    // Reopen the LISTENING window from THIS instant — when audio actually stopped — so the
+    // kid can answer Claude's question for the full TTL WITHOUT re-saying "Alexa". Done
+    // board-local on purpose: the voice server refreshes activation when it finishes SENDING
+    // the last chunk, which can precede real playback end (buffering / clock skew) and let
+    // the window lapse mid-answer. The board owns the true playback-end, so it owns this.
+    if (prevTurnGate && !turnGate)
+    {
+      wakeDeadlineMs = now_ms + ACTIVE_WINDOW_MS;
+    }
+    prevTurnGate = turnGate;
 
     // Wake handling, guarded twice:
     //   • !turnGate — Snowboy is NOT half-duplex-gated, so TTS leaking into the mic fires
