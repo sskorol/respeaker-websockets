@@ -437,16 +437,15 @@ int main(int argc, char *argv[])
     // AudioStart will trigger one reopen — small cost, once per session.
     sink.open(48000, 2);
 
-    ix::WebSocket ws;
-    ws.setUrl(wsUrl);
-    ws.setPingInterval(kWsPingIntervalSec);
-    ws.disablePerMessageDeflate();
-
     std::atomic<uint64_t> binaryFrames{0};
-    ws.setOnMessageCallback([&sink, &wsUrl, &binaryFrames](const ix::WebSocketMessagePtr &msg) {
+    // Epoch-ms the current connection reached Open. The manual reconnect loop reads this
+    // on close to decide whether the session was healthy (reset backoff) or a flap (grow it).
+    std::atomic<int64_t> lastOpenMs{0};
+    auto onMessage = [&sink, &wsUrl, &binaryFrames, &lastOpenMs](const ix::WebSocketMessagePtr &msg) {
         switch (msg->type)
         {
         case ix::WebSocketMessageType::Open:
+            lastOpenMs.store(nowEpochMs());
             verbose(VV_INFO, stdout, "Connected to audio WS: %s", wsUrl.c_str());
             break;
         case ix::WebSocketMessageType::Message:
@@ -493,18 +492,82 @@ int main(int argc, char *argv[])
         default:
             break;
         }
-    });
+    };
+
+    // Drive reconnection manually with bounded exponential backoff. ixwebsocket's built-in
+    // auto-reconnect RESETS its backoff the instant a socket reaches Open — so if every
+    // connection Opens then dies immediately (e.g. while the voice server is mid-restart),
+    // backoff never grows and the board hammers reconnect ~25×/sec. On this 1 GB no-swap
+    // board that pegs CPU and starves the LED/mic loop → no animation, no replies, and it
+    // never self-recovers (observed 2026-05-31: a voice-only restart stormed for 14 min
+    // until the speaker process was restarted by hand). Manual loop grows the delay
+    // (1→2→…→30 s) and only resets after a connection proved healthy (lived ≥ kHealthyMs),
+    // so a flap self-throttles and a genuine reconnect still snaps back to fast retries.
+    constexpr int kMinBackoffMs = 1000;
+    // Cap = worst-case recovery latency: the board only learns voice is back by retrying,
+    // and only at the end of a sleep. 10 s caps the kid's dead-air at ~10 s while keeping
+    // a long outage to ≤6 attempts/min (vs the ~2500/min storm). Backoff 1→2→4→8→10→10…
+    constexpr int kMaxBackoffMs = 10000;
+    constexpr int kConnectTimeoutMs = 5000;  // give a connect attempt this long to reach Open
+    constexpr int64_t kHealthyMs = 10000;    // a session must last this long to count as healthy
+    int backoffMs = kMinBackoffMs;
 
     verbose(VV_INFO, stdout, "respeaker_speaker starting: ws=%s alsa=%s", wsUrl.c_str(), pcmDevice.c_str());
-    ws.start();
 
     while (!shouldExit.load())
     {
-        std::this_thread::sleep_for(200ms);
+        // Fresh WebSocket per attempt. ixwebsocket 11.0.4 (2020) flaps when ONE object is
+        // reused across stop()/start() — the re-started socket reaches Open then drops within
+        // seconds (reason empty). A brand-new object each attempt behaves like a fresh process
+        // and holds the connection. (Upstream's own reconnect reuses internal transport state
+        // it resets in ways the public stop()/start() path does not — hence reuse, not retry,
+        // is the trigger.)
+        ix::WebSocket ws;
+        ws.setUrl(wsUrl);
+        ws.setPingInterval(kWsPingIntervalSec);
+        ws.disablePerMessageDeflate();
+        ws.disableAutomaticReconnection();
+        ws.setOnMessageCallback(onMessage);
+
+        lastOpenMs.store(0);
+        ws.start();  // non-blocking connect; Open/Close arrive on the message callback
+
+        // start() is async — readyState is briefly still Closed before the worker thread
+        // flips it to Connecting. Wait for the attempt to RESOLVE to Open (or give up after
+        // a connect timeout) before monitoring for drop; otherwise we'd read the stale
+        // Closed and bail instantly, never letting any connection establish.
+        int waited = 0;
+        while (!shouldExit.load() && ws.getReadyState() != ix::ReadyState::Open &&
+               waited < kConnectTimeoutMs)
+        {
+            std::this_thread::sleep_for(100ms);
+            waited += 100;
+        }
+        // If we reached Open, hold the session until it drops back out of Open.
+        while (!shouldExit.load() && ws.getReadyState() == ix::ReadyState::Open)
+        {
+            std::this_thread::sleep_for(200ms);
+        }
+        ws.stop();  // fully tear down the socket + reader thread before the next attempt
+        if (shouldExit.load())
+            break;
+
+        int64_t opened = lastOpenMs.load();
+        int64_t livedMs = opened > 0 ? (nowEpochMs() - opened) : 0;
+        if (livedMs >= kHealthyMs)
+            backoffMs = kMinBackoffMs;  // healthy session ended → retry promptly
+        else
+            backoffMs = std::min(backoffMs * 2, kMaxBackoffMs);  // flapping → back off
+
+        verbose(VV_INFO, stdout, "Audio WS down (session lived %lld ms); reconnecting in %d ms",
+                static_cast<long long>(livedMs), backoffMs);
+
+        // Interruptible backoff sleep so SIGTERM during the wait exits promptly.
+        for (int slept = 0; slept < backoffMs && !shouldExit.load(); slept += 100)
+            std::this_thread::sleep_for(100ms);
     }
 
     verbose(VV_INFO, stdout, "Shutting down...");
-    ws.stop();
     sink.close();
     ix::uninitNetSystem();
     return EXIT_SUCCESS;

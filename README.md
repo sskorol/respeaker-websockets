@@ -187,6 +187,12 @@ dev-box `/audio` URL.
   frames. Text control frames: `{"type":"interrupted"}` (cancel → flush ALSA),
   `{"type":"hold","until_ms":…}` (mute mic during a tool window),
   `{"type":"activation","until_ms":…}` (slide the activation window).
+  Reconnect is driven manually (not ixwebsocket auto-reconnect): a **fresh
+  `ix::WebSocket` per attempt** with **bounded exponential backoff** (1→2→…→10 s,
+  reset after a ≥10 s healthy session). So a dev-box/voice restart or network blip
+  recovers on its own within ~10 s — no `make board-restart` needed. See the long
+  comment block in `src/speaker_main.cpp` `main()` for why (object reuse flaps, and
+  the library's built-in backoff resets on every successful connect → storm).
 - **STT `/stt/stream` events** (→ `respeaker_core`): `SttFinal` flips the LED
   to `ON_LISTEN` (Claude thinking); `SttDropped` noted.
 
@@ -223,6 +229,10 @@ ls -la /tmp/respeaker_*_ms   # speaking / thinking-clear / active-until flags
 
 - **LED stuck in `ON_LISTEN`, mic feels dead:** a turn started thinking but no
   audio played. The 30 s cap self-clears it; `make tmpfs-reset` does it now.
+- **`pm2 logs speaker` shows rapid `Connected`/`closed` churn:** the dev-box
+  voice server is down or restarting. The speaker backs off (1→2→…→10 s) and
+  reconnects automatically once voice is back — no action needed. A *tight* storm
+  (many/sec) means an old build without manual backoff — `make board-deploy`.
 - **"Alexa" under-/over-triggers:** tune `kwsSensitivity` (0.5–0.65).
 - **Board won't reach the server:** the dev-box STT must bind `0.0.0.0`
   (default `127.0.0.1` is unreachable from the board); check `webSocketAddress`.
