@@ -34,6 +34,11 @@ bool WsTransport::connect(string wsAddress)
   client.setUrl(wsAddress);
   client.setPingInterval(WS_PING_INTERVAL);
   client.disablePerMessageDeflate();
+  // Cap ixwebsocket's auto-reconnect backoff. A long dev-box outage otherwise retries with
+  // an unbounded-growing wait; the 10 s ceiling bounds worst-case dead-air on this 1 GB
+  // no-swap board. (This vendored 11.0.4 lacks setMinWaitBetweenReconnectionRetries; the
+  // speaker process uses a manual fresh-object loop for the harsher flap case.)
+  client.setMaxWaitBetweenReconnectionRetries(10000);
   client.setOnMessageCallback([this](const ix::WebSocketMessagePtr &msg) {
     auto type = msg->type;
 

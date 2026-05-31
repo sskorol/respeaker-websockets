@@ -479,11 +479,15 @@ int main(int argc, char *argv[])
             break;
         case ix::WebSocketMessageType::Close:
             verbose(VV_INFO, stdout, "Audio WS closed (reason=%s)", msg->closeInfo.reason.c_str());
-            // Voice server went away — flush any queued audio + clear the half-duplex
-            // gate so mic isn't permanently muted while we wait for reconnect.
+            // Voice server went away — flush any queued audio + clear ALL half-duplex
+            // gates so the mic isn't left muted while we wait for reconnect. busy_until
+            // especially: without clearing it, a mid-turn drop keeps the mic + wake word
+            // gated for up to kMaxBusyMs (~90 s) after the board reconnects.
             sink.drop();
             playbackUntilMs.store(0);
+            holdUntilMs.store(0);
             writeSpeakingUntil(0);
+            writeBusyUntil(0);
             writeThinkingClear(nowEpochMs());
             break;
         case ix::WebSocketMessageType::Error:

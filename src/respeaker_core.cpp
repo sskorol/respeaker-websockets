@@ -3,7 +3,10 @@
 RespeakerCore::RespeakerCore(Config* config)
 {
   string inputSource = "default";
-  string kwsPath = string(getenv("PWD")) + "/models/";
+  // PWD isn't guaranteed in the env under pm2; std::string(nullptr) is UB → crash.
+  // Fall back to CWD ("."), where CMake copies the models/ dir next to the binary.
+  const char *pwd = getenv("PWD");
+  string kwsPath = string(pwd ? pwd : ".") + "/models/";
   string kwsResourcesPath = kwsPath + "common.res";
   string kwsModelPath = kwsPath + config->kwsModelName();
 

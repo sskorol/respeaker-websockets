@@ -48,6 +48,8 @@ int cAPA102_Init(HW_LED_SPEC hwLedSpec, uint8_t brightness)
     else
         cAPA012_BUF.brightness = 0xE0 | (0x1F & brightness);
     cAPA012_BUF.pixels = (uint8_t *)malloc(cAPA012_BUF.number * 4);
+    if (cAPA012_BUF.pixels == NULL)
+        return -1;
     cAPA012_BUF.fd_spi = cAPA102_Try_Open_SPI_Dev(RETRY_TIMES, RETRY_GAP_SEC, spi_bus, spi_dev);
     if (-1 == cAPA012_BUF.fd_spi)
         return -1;
@@ -85,9 +87,9 @@ void cAPA102_Get_Pixel_RGB(uint32_t index, uint8_t *red, uint8_t *green, uint8_t
     if (index < cAPA012_BUF.number)
     {
         uint8_t *ptr = &cAPA012_BUF.pixels[index * 4];
-        red = ptr + R_OFF_SET;
-        green = ptr + G_OFF_SET;
-        blue = ptr + B_OFF_SET;
+        *red = ptr[R_OFF_SET];
+        *green = ptr[G_OFF_SET];
+        *blue = ptr[B_OFF_SET];
     }
 }
 
@@ -130,7 +132,21 @@ void cAPA102_Refresh(void)
     uint32_t i;
     uint32_t buf_len = 4 + 4 * cAPA012_BUF.number + (cAPA012_BUF.number + 15) / 16 + 1;
     uint8_t *ptr, *qtr;
-    uint8_t *tx = (uint8_t *)malloc(buf_len);
+    // Reuse one TX buffer across frames. malloc/free on every LED refresh (14-100 ms
+    // cadence) churns the heap on a no-swap board. Size is fixed after init.
+    static uint8_t *tx = NULL;
+    static uint32_t tx_len = 0;
+    if (tx == NULL || tx_len != buf_len)
+    {
+        uint8_t *resized = (uint8_t *)realloc(tx, buf_len);
+        if (resized == NULL)
+        {
+            fprintf(stdout, "[Error] cAPA102_Refresh: alloc failed\n");
+            return;
+        }
+        tx = resized;
+        tx_len = buf_len;
+    }
 
     struct spi_ioc_transfer tr = {
         .tx_buf = (unsigned long)tx,
@@ -157,8 +173,6 @@ void cAPA102_Refresh(void)
     ret = ioctl(cAPA012_BUF.fd_spi, SPI_IOC_MESSAGE(1), &tr);
     if (ret < 1)
         fprintf(stdout, "[Error] can't send spi message\n");
-
-    free(tx);
 }
 
 void cAPA102_Close(void)

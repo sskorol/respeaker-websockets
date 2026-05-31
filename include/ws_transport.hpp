@@ -34,8 +34,10 @@ class WsTransport
 {
 private:
   ix::WebSocket client;
-  bool _isConnected;
-  bool _isTranscribeReceived;
+  // Written on the ixwebsocket callback thread, read on the main loop — atomic to avoid
+  // a data race (benign on ARMv7 for a bool, fixed for correctness/portability).
+  std::atomic<bool> _isConnected;
+  std::atomic<bool> _isTranscribeReceived;
   // UTC epoch ms timestamp of when SttFinal arrived. 0 means "not thinking". The
   // event-driven clear path is speakerActive rising edge (LED owner clears in main
   // loop) OR respeaker_speaker writes /tmp/respeaker_thinking_clear_ms > this value

@@ -1,5 +1,5 @@
-#ifndef __PIXEL_RING__HPP__
-#define __PIXEL_RING_HPP__
+#ifndef PIXEL_RING_HPP
+#define PIXEL_RING_HPP
 
 #include "config.hpp"
 extern "C"
@@ -61,7 +61,7 @@ uint32_t textToColour(const char *cTxt)
  */
 int setPowerPin()
 {
-  if (-1 == RUNTIME.power.val || -1 == RUNTIME.power.val)
+  if (-1 == RUNTIME.power.pin || -1 == RUNTIME.power.val)
   {
     verbose(VV_INFO, stdout, BLUE "[%s]" NONE " Mode has no power pin", __PRETTY_FUNCTION__);
     return 0;
@@ -90,7 +90,7 @@ int setPowerPin()
  */
 int resetPowerPin()
 {
-  if (-1 == RUNTIME.power.val || -1 == RUNTIME.power.val)
+  if (-1 == RUNTIME.power.pin || -1 == RUNTIME.power.val)
   {
     verbose(VV_INFO, stdout, BLUE "[%s]" NONE " Mode has no power pin", __PRETTY_FUNCTION__);
     return 0;
