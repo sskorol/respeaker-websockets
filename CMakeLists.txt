@@ -3,7 +3,8 @@ project(respeaker_core VERSION 1.0.0)
 
 set(MIN_LIBRESPEAKER_VERSION 2.1.1)
 set(CMAKE_CXX_STANDARD 14)
-set(CMAKE_CXX_FLAGS "-fPIC -std=c++14 -fpermissive -fomit-frame-pointer")
+set(CMAKE_CXX_FLAGS "-fPIC -std=c++14 -fpermissive -fomit-frame-pointer -O2")
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O2")
 
 include(FindPkgConfig)
 
