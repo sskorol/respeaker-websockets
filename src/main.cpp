@@ -5,13 +5,50 @@
 // server slides it forward on every accepted turn via /tmp/respeaker_active_until_ms
 // (written by respeaker_speaker on an `activation` frame). 30 s, matches VOICE_ACTIVATION_TTL_S.
 #define ACTIVE_WINDOW_MS (30 * 1000LL)
-// How long the wake/DOA animation holds before the steady LED logic resumes.
-#define WAKE_LED_HOLD_MS 1500LL
+// How long the wake animation owns the ring before the steady LED logic resumes. Must cover
+// on_wake's full solid-hold (~1 s) + fade-out (~0.34 s) so the steady logic can't cut it short.
+#define WAKE_LED_HOLD_MS 1600LL
+
+// Onboard USER button — gpio-keys, kernel-debounced key events on /dev/input/event0.
+// Device-tree label "GPIO User Key", linux,code = 0xc2 (194). Press = value 1 (we ignore
+// autorepeat/value 2 and release/value 0). Toggles mic mute. The asr process user must be
+// in the `input` group to read the node (one-time: usermod -aG input <user> + pm2 restart).
+#define BUTTON_EVENT_DEV "/dev/input/event0"
+#define BUTTON_KEYCODE 194
 
 static long long nowEpochMs()
 {
   using namespace std::chrono;
   return duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
+}
+
+// Open the button event device non-blocking. Returns -1 (mute silently disabled) if the
+// node is missing or unreadable — the assistant keeps working without the button.
+static int openButton()
+{
+  int fd = open(BUTTON_EVENT_DEV, O_RDONLY | O_NONBLOCK);
+  if (fd < 0)
+    verbose(VV_INFO, stdout, "Button unavailable (%s): %s — mic mute disabled.",
+            BUTTON_EVENT_DEV, strerror(errno));
+  else
+    verbose(VV_INFO, stdout, "Button ready (%s, keycode %d) → mic mute toggle.",
+            BUTTON_EVENT_DEV, BUTTON_KEYCODE);
+  return fd;
+}
+
+// Drain all pending events; return true iff a USER-button PRESS occurred this tick.
+// Non-blocking, so it never stalls the audio loop. Multiple presses in one tick collapse
+// to a single toggle (read drains to EAGAIN).
+static bool buttonPressed(int fd)
+{
+  struct input_event ev;
+  bool pressed = false;
+  while (read(fd, &ev, sizeof(ev)) == (ssize_t)sizeof(ev))
+  {
+    if (ev.type == EV_KEY && ev.code == BUTTON_KEYCODE && ev.value == 1)
+      pressed = true;
+  }
+  return pressed;
 }
 
 void enablePixelRing(Config* config)
@@ -25,12 +62,15 @@ void enablePixelRing(Config* config)
   RUNTIME.curr_state = RUNTIME.if_mute ? TO_MUTE : TO_UNMUTE;
   state_machine_update();
 
-  // It makes no sense to continue if WS is unavailable.
+  // Start the WS reconnect manager. Do NOT quit if STT isn't reachable yet: connect()
+  // returns whether the FIRST attempt reached Open, but the manager keeps retrying with
+  // bounded backoff (1→2→4→8→10 s) and the mic→WS loop below guards every send on
+  // isConnected(). Quitting here is what crash-looped asr under pm2 after a hard reboot —
+  // the board boots before the dev-box/network is reachable, so the first connect fails.
   wsClient = new WsTransport();
   if (!wsClient->connect(config->webSocketAddress()))
   {
-    verbose(VV_INFO, stdout, "Unable to connect to WS server. Quitting...");
-    cleanup(EXIT_FAILURE);
+    verbose(VV_INFO, stdout, "STT WS not up yet; retrying in background (1->2->4->8->10 s).");
   }
 }
 
@@ -96,7 +136,9 @@ int main(int argc, char *argv[])
   int wakeWordIndex = 0;
   TimePoint detectTime;
   string audioChunk;
-  STATE prevLedState = ON_IDLE;
+  int buttonFd = openButton();    // -1 ⇒ mute disabled, assistant still works
+  bool muted = RUNTIME.if_mute;   // start state from config (isMutedOnStart)
+  STATE prevLedState = muted ? TO_MUTE : ON_IDLE;
   long long wakeDeadlineMs = 0;   // local activation bootstrap (set on "Alexa")
   long long wakeLedUntilMs = 0;   // hold the wake/DOA animation until this time
   bool prevStreaming = false;     // edge-detect mic streaming to force-flush STT on close
@@ -106,6 +148,20 @@ int main(int argc, char *argv[])
   {
     audioChunk = respeakerCore->processAudio(wakeWordIndex);
     long long now_ms = nowEpochMs();
+
+    // USER button toggles mic mute. Muted ⇒ no mic→STT streaming and no wake re-arm
+    // (gates below), and the ring HOLDS solid red until unmuted. The mic-gate close edge
+    // (prevStreaming && !streaming) flushes any in-flight STT partial with a silent reset,
+    // so muting mid-utterance can't bleed a fragment into the next turn. Mic-only: a turn
+    // already speaking keeps playing — mute stops the kid's mic, not the assistant.
+    if (buttonFd >= 0 && buttonPressed(buttonFd))
+    {
+      muted = !muted;
+      changePixelRingState(muted ? TO_MUTE : TO_UNMUTE);
+      prevLedState = muted ? TO_MUTE : TO_UNMUTE;
+      wakeLedUntilMs = 0;   // drop any pending wake-hold so it can't override the mute LED
+      verbose(VV_INFO, stdout, "Button pressed → mic %s", muted ? "MUTED" : "UNMUTED");
+    }
 
     // Three-state LED feedback driven by half-duplex signals:
     //   ON_SPEAK  — speaker actively playing TTS (highest precedence).
@@ -149,7 +205,7 @@ int main(int argc, char *argv[])
     //   • prevLedState != ON_WAKE — re-triggering a live ON_WAKE makes state_machine_update
     //     pthread_join a thread whose `while (curr_state == ON_WAKE)` is still true → it
     //     never exits → main loop deadlocks. Dedup keeps us from re-entering our own state.
-    if (wakeWordIndex >= 1 && !turnGate && prevLedState != ON_WAKE)
+    if (wakeWordIndex >= 1 && !turnGate && !muted && prevLedState != ON_WAKE)
     {
       isWakeWordDetected = true;
       wsClient->isTranscribed(false);
@@ -165,7 +221,9 @@ int main(int argc, char *argv[])
     }
 
     // Hold the wake/DOA animation for its window; don't let the steady logic yank it away.
-    if (now_ms >= wakeLedUntilMs)
+    // While muted, skip steady LED entirely so the solid red mute ring holds (mute wins
+    // over idle/listen/speak — the kid sees an unambiguous "mic off").
+    if (!muted && now_ms >= wakeLedUntilMs)
     {
       // SPEAK = audio playing; LISTEN(comet) = THINKING (busy, no audio yet); else IDLE.
       STATE targetLed = speakerActive ? ON_SPEAK : ((thinking || busy) ? ON_LISTEN : ON_IDLE);
@@ -184,9 +242,11 @@ int main(int argc, char *argv[])
     long long serverUntilMs = WsTransport::activeUntilMs();
     if (serverUntilMs > activeUntilMs) activeUntilMs = serverUntilMs;
     bool active = now_ms < activeUntilMs;
-    // Streaming ⟺ it's the kid's turn: window open AND no turn in flight. This is the
-    // SINGLE condition under which mic audio reaches STT — nothing leaks in any other state.
-    bool streaming = active && !turnGate;
+    // Streaming ⟺ it's the kid's turn: window open AND no turn in flight AND not muted.
+    // This is the SINGLE condition under which mic audio reaches STT — nothing leaks in any
+    // other state. Mute forces it false: the button is a hard mic kill independent of the
+    // wake window.
+    bool streaming = active && !turnGate && !muted;
     // Mic gate just CLOSED. Flush STT so a partial captured in the last pre-gate chunks
     // can't bleed into the NEXT turn's transcript. TWO distinct closes, TWO frames:
     //   • turn started (turnGate) → `end`: finalize the partial; voice 409-drops it (a
@@ -204,6 +264,8 @@ int main(int argc, char *argv[])
     }
   }
 
+  if (buttonFd >= 0)
+    close(buttonFd);
   respeakerCore->stopAudioProcessing();
   cleanup(EXIT_SUCCESS);
 }

@@ -178,6 +178,11 @@ void *to_mute()
     RUNTIME.if_update = 0;
     cAPA102_Clear_All();
 
+    // Fade the whole ring UP to the mute colour, then HOLD it solid. Unlike the other
+    // states this is a persistent indicator, not a one-shot transition: the ring stays lit
+    // the entire time the mic is muted so the kid can always see it at a glance. main.cpp
+    // keeps curr_state == TO_MUTE (skips steady-LED logic) until the button unmutes, which
+    // flips curr_state and lets this thread fall through and clear.
     step = RUNTIME.max_brightness / STEP_COUNT;
     for (curr_bri = 0; curr_bri < RUNTIME.max_brightness && RUNTIME.curr_state == TO_MUTE; curr_bri += step)
     {
@@ -186,22 +191,14 @@ void *to_mute()
         cAPA102_Refresh();
         delay_on_state(50, TO_MUTE);
     }
-    curr_bri = RUNTIME.max_brightness;
-    for (curr_bri = RUNTIME.max_brightness; curr_bri > 0 && RUNTIME.curr_state == TO_MUTE; curr_bri -= step)
-    {
-        for (j = 0; j < RUNTIME.LEDs.number && RUNTIME.curr_state == TO_MUTE; j++)
-            cAPA102_Set_Pixel_4byte(j, remap_4byte(RUNTIME.animation_color.mute, curr_bri));
-        cAPA102_Refresh();
-        delay_on_state(50, TO_MUTE);
-    }
+    // Pin to full mute colour and hold until the state leaves TO_MUTE.
+    for (j = 0; j < RUNTIME.LEDs.number; j++)
+        cAPA102_Set_Pixel_4byte(j, remap_4byte(RUNTIME.animation_color.mute, RUNTIME.max_brightness));
+    cAPA102_Refresh();
+    while (RUNTIME.curr_state == TO_MUTE)
+        delay_on_state(100, TO_MUTE);
     cAPA102_Clear_All();
     cAPA102_Refresh();
-    if (TO_MUTE == RUNTIME.curr_state)
-    {
-        RUNTIME.curr_state = ON_IDLE;
-        RUNTIME.if_update = 1;
-    }
-    cAPA102_Clear_All();
     return ((void *)"TO_MUTE");
 }
 
@@ -256,46 +253,54 @@ void *on_disabled()
     return ((void *)"ON_DISABLED");
 }
 
-// 6 — Wake acknowledgment: ONE slow, dim cyan breath over the whole ring (gentle
-// "I'm listening" glow, kid-safe — no strobing). DOA on this 6-mic board flat on a
-// table is too noisy to point reliably, so we claim no direction. main.cpp holds
-// ON_WAKE ~1.5 s; we pace a single rise+fall to roughly fill that window instead of
-// looping a fast bright pulse (which flickered ~1.6 Hz at full brightness and hurt
-// young eyes). Peak brightness is capped low and the fade uses fine steps for smoothness.
+// 6 — Wake acknowledgment: light the WHOLE ring solid soft-cyan, hold ~2 s, then a single
+// smooth fade-out. No pulsing, no loop, no second appearance. NOTE: we deliberately do NOT
+// use remap_4byte here — that shared helper has a blue-channel overflow bug (it scales the
+// full 0xRRGGBB int instead of the masked byte), so a "dim" cyan came out near-full-bright
+// blue and the old breath-loop made it appear twice. We scale each channel by hand instead,
+// so brightness is exactly what we ask for. main.cpp holds ON_WAKE long enough (WAKE_LED_-
+// HOLD_MS) for the full hold+fade to finish before the steady LED logic takes over.
 void *on_wake()
 {
-    const uint32_t WAKE_C = 0x00CCFF; // Alexa-cyan
-    // Fine-grained, slow, dim: a single breath ≈ WAKE_LED_HOLD_MS so it never repeats.
-    const int WAKE_STEPS = 48;        // smoothness (vs STEP_COUNT=20 hard ramp)
-    const int WAKE_STEP_MS = 14;      // 48*14 ≈ 670 ms each way → ~1.34 s one breath
+    // Soft cyan target (post-scale, correct math). Clearly visible full ring, not blinding.
+    const uint8_t WR = 0x00, WG = 0x18, WB = 0x26; // (0,24,38) soft dim cyan
+    const int WAKE_HOLD_MS = 1000;                 // ring solid for ~1 s
+    const int WAKE_FADE_STEPS = 24;                // smooth fade
+    const int WAKE_FADE_STEP_MS = 14;              // 24*14 ≈ 340 ms fade-out
     verbose(VVV_DEBUG, stdout, PURPLE "[%s]" NONE " animation started", __FUNCTION__);
     RUNTIME.if_update = 0;
     cAPA102_Clear_All();
 
     uint8_t leds = RUNTIME.LEDs.number;
-    // Cap the peak well below max — a soft glow, not a flash. Floor at 1 so it stays visible.
-    uint8_t peak = RUNTIME.max_brightness / 3;
-    if (peak < 1)
-        peak = 1;
-    while (RUNTIME.curr_state == ON_WAKE)
+    uint32_t solid = ((uint32_t)WR << 16) | ((uint32_t)WG << 8) | WB;
+
+    // Whole ring ON, solid.
+    for (uint8_t i = 0; i < leds; i++)
+        cAPA102_Set_Pixel_4byte(i, solid);
+    cAPA102_Refresh();
+
+    // Hold ~2 s (poll the state often so a state change still interrupts promptly).
+    for (int t = 0; t < WAKE_HOLD_MS && RUNTIME.curr_state == ON_WAKE; t += 20)
+        delay_on_state(20, ON_WAKE);
+
+    // Single smooth fade-out to black — correct per-channel scaling, monotonic.
+    for (int s = WAKE_FADE_STEPS; s >= 0 && RUNTIME.curr_state == ON_WAKE; s--)
     {
-        for (int s = 1; s <= WAKE_STEPS && RUNTIME.curr_state == ON_WAKE; s++)
-        {
-            uint8_t lvl = (uint8_t)(peak * s / WAKE_STEPS);
-            for (uint8_t i = 0; i < leds; i++)
-                cAPA102_Set_Pixel_4byte(i, remap_4byte(WAKE_C, lvl));
-            cAPA102_Refresh();
-            delay_on_state(WAKE_STEP_MS, ON_WAKE);
-        }
-        for (int s = WAKE_STEPS; s >= 0 && RUNTIME.curr_state == ON_WAKE; s--)
-        {
-            uint8_t lvl = (uint8_t)(peak * s / WAKE_STEPS);
-            for (uint8_t i = 0; i < leds; i++)
-                cAPA102_Set_Pixel_4byte(i, remap_4byte(WAKE_C, lvl));
-            cAPA102_Refresh();
-            delay_on_state(WAKE_STEP_MS, ON_WAKE);
-        }
+        uint8_t r = (uint8_t)(WR * s / WAKE_FADE_STEPS);
+        uint8_t g = (uint8_t)(WG * s / WAKE_FADE_STEPS);
+        uint8_t b = (uint8_t)(WB * s / WAKE_FADE_STEPS);
+        uint32_t c = ((uint32_t)r << 16) | ((uint32_t)g << 8) | b;
+        for (uint8_t i = 0; i < leds; i++)
+            cAPA102_Set_Pixel_4byte(i, c);
+        cAPA102_Refresh();
+        delay_on_state(WAKE_FADE_STEP_MS, ON_WAKE);
     }
+
+    // Stay dark until main.cpp leaves ON_WAKE — no re-light, no flicker.
+    cAPA102_Clear_All();
+    cAPA102_Refresh();
+    while (RUNTIME.curr_state == ON_WAKE)
+        delay_on_state(50, ON_WAKE);
     cAPA102_Clear_All();
     cAPA102_Refresh();
     return ((void *)"ON_WAKE");

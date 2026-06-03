@@ -23,7 +23,10 @@ extern "C"
 #include "json.hpp"
 #include <atomic>
 #include <chrono>
+#include <memory>
+#include <mutex>
 #include <string>
+#include <thread>
 
 using namespace std;
 using json = nlohmann::json;
@@ -33,7 +36,25 @@ using TimePoint = chrono::time_point<SteadyClock>;
 class WsTransport
 {
 private:
-  ix::WebSocket client;
+  // The active socket for the CURRENT reconnect attempt. Recreated fresh each attempt by
+  // the reconnect thread (see ws_transport.cpp for why a fresh object per attempt is
+  // mandatory on ixwebsocket 11.0.4), so it's a raw pointer published under _clientMu
+  // rather than an owned member. Owner is the reconnect thread's local unique_ptr.
+  ix::WebSocket *_client{nullptr};
+  std::mutex _clientMu;
+
+  // STT WS URL, captured by connect() and used by every reconnect attempt.
+  std::string _wsAddress;
+
+  // Reconnect manager: a background thread drives bounded-backoff reconnection so a
+  // transient dev-box outage (or a boot-time race where STT isn't up yet) self-heals
+  // instead of crashing the process — which pm2 used to respawn into a tight loop.
+  std::thread _reconnectThread;
+  std::atomic<bool> _shouldStop{false};
+  // UTC epoch ms the current attempt reached Open; 0 if it never did. The loop reads it
+  // on close to tell a healthy session (reset backoff) from a flap (grow it).
+  std::atomic<long long> _lastOpenMs{0};
+
   // Written on the ixwebsocket callback thread, read on the main loop — atomic to avoid
   // a data race (benign on ARMv7 for a bool, fixed for correctness/portability).
   std::atomic<bool> _isConnected;
@@ -47,8 +68,19 @@ private:
   // this the main thread could see a torn value (0) and skip the ON_LISTEN state.
   std::atomic<long long> _thinkingSetMs;
 
+  // Build + fully configure a fresh socket (URL, ping, callbacks). Built-in auto-reconnect
+  // is disabled — this class owns reconnection so an Open-then-drop flap can't reset the
+  // backoff and storm the board.
+  std::unique_ptr<ix::WebSocket> makeSocket();
+  // Background reconnect loop: fresh socket per attempt, bounded exponential backoff.
+  void runReconnectLoop();
+
 public:
   WsTransport();
+  ~WsTransport();
+  // Start the reconnect manager for `wsAddress`. Returns whether the FIRST attempt reached
+  // Open within WS_CONNECTION_TIMEOUT — informational only; the caller must NOT treat false
+  // as fatal (the manager keeps retrying and the mic→WS loop guards sends on isConnected()).
   bool connect(string wsAddress);
   void disconnect();
   void send(string audioChunk);

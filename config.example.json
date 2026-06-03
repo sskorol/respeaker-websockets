@@ -21,7 +21,7 @@
     "idleColor": "teal",
     "listenColor": "blue",
     "speakColor": "purple",
-    "muteColor": "yellow",
+    "muteColor": "red",
     "unmuteColor": "green",
     "isMutedOnStart": false
   },

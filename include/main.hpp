@@ -8,6 +8,8 @@ extern "C"
 #include "gpio_rw.h"
 #include "state_handler.h"
 #include "verbose.h"
+#include <errno.h>
+#include <linux/input.h>
 }
 
 #include <cstring>
